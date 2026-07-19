@@ -68,6 +68,10 @@ The public seed file at `data/site-content.json` intentionally contains no cards
 
 Create new cards from the protected backend after deployment, or connect the app to a private data source that is not committed to this public repository.
 
+## Privacy Policy Maintenance
+
+The public privacy notice is served at `/privacy-policy` and lives in `privacy-policy.html`. Update its date and affected sections whenever the system adds or changes personal-data fields, public visibility, authentication, cookies, analytics, storage, external providers, or future ticket/event features. Confirm the controller identity, privacy contact, retention periods, and provider agreements before each production launch.
+
 ## Validation
 
 Use these checks before publishing:

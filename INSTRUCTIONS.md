@@ -26,4 +26,5 @@ This first version covers digital business cards and team/company labels. Later 
 - Do not commit real access codes.
 - Do not commit private card/contact data to this public repository.
 - Keep `data/site-content.json` empty unless the data is safe to publish.
+- Keep `privacy-policy.html` aligned with every new data field, provider, storage path, cookie, analytics feature, or public-facing workflow.
 - Run `npm run lint` and `npm run build` before pushing.

@@ -472,6 +472,10 @@ app.get('/cards/:slug', async (req, res) => {
   }
 });
 
+app.get(['/privacy-policy', '/privacy-policy/'], (_req, res) => {
+  res.sendFile(path.join(ROOT_DIR, 'privacy-policy.html'));
+});
+
 app.get('/', (_req, res) => {
   res.sendFile(path.join(ROOT_DIR, 'index.html'));
 });
