@@ -54,6 +54,46 @@ async function api(path, options = {}) {
   return payload;
 }
 
+function showActionError(error) {
+  state.status = `Action failed: ${error?.message || 'Please try again.'}`;
+  renderApp();
+}
+
+function runAction(action) {
+  return Promise.resolve().then(action).catch(showActionError);
+}
+
+function confirmAction({ title, message, confirmLabel = 'Confirm', danger = false }) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'backend-confirm-overlay';
+    overlay.innerHTML = `
+      <section class="backend-confirm-card" role="dialog" aria-modal="true" aria-labelledby="backend-confirm-title">
+        <span class="backend-kicker">Confirmation</span>
+        <h2 id="backend-confirm-title">${escapeHtml(title)}</h2>
+        <p>${escapeHtml(message)}</p>
+        <div class="backend-confirm-actions">
+          <button type="button" data-confirm-cancel>Cancel</button>
+          <button type="button" data-confirm-accept class="${danger ? 'backend-danger' : 'backend-primary'}">${escapeHtml(confirmLabel)}</button>
+        </div>
+      </section>
+    `;
+
+    const finish = (accepted) => {
+      overlay.remove();
+      resolve(accepted);
+    };
+
+    overlay.addEventListener('click', (event) => {
+      if (event.target === overlay) finish(false);
+    });
+    overlay.querySelector('[data-confirm-cancel]').addEventListener('click', () => finish(false));
+    overlay.querySelector('[data-confirm-accept]').addEventListener('click', () => finish(true));
+    document.body.appendChild(overlay);
+    overlay.querySelector('[data-confirm-cancel]').focus();
+  });
+}
+
 async function loadAdminData() {
   state.siteData = await api('/api/admin-site');
   state.siteData.labels = Array.isArray(state.siteData.labels) ? state.siteData.labels : [];
@@ -614,6 +654,7 @@ function renderCardsView() {
       <div>
         <span class="backend-kicker">Visual Library</span>
         <h2>${cards.length} matching cards</h2>
+        ${state.status ? `<p class="backend-status" role="status">${escapeHtml(state.status)}</p>` : ''}
       </div>
       <button type="button" data-new-card><i data-lucide="plus"></i>New Card</button>
     </section>
@@ -892,7 +933,14 @@ async function cloneCard(sourceCard = selectedCard()) {
 
 async function deleteCard(targetCard = selectedCard()) {
   const card = targetCard;
-  if (!card || !window.confirm(`Delete ${card.title || card.slug}?`)) return;
+  if (!card || !(await confirmAction({
+    title: 'Delete business card?',
+    message: `${card.title || card.slug} will be removed from the live card library.`,
+    confirmLabel: 'Delete Card',
+    danger: true,
+  }))) return;
+  state.status = 'Deleting card...';
+  renderApp();
   await api(`/api/cards/${encodeURIComponent(card.slug)}`, { method: 'DELETE' });
   state.siteData.cards = state.siteData.cards.filter((item) => item.id !== card.id);
   const nextCard = state.siteData.cards[0];
@@ -971,9 +1019,14 @@ function createCompanyLabel() {
   renderApp();
 }
 
-function deleteCompanyLabel() {
+async function deleteCompanyLabel() {
   const label = selectedLabel();
-  if (!label || !window.confirm(`Delete company ${label.name}? Cards will keep working but lose this label.`)) return;
+  if (!label || !(await confirmAction({
+    title: 'Delete company label?',
+    message: `Cards will keep working but lose the ${label.name} company label.`,
+    confirmLabel: 'Delete Company',
+    danger: true,
+  }))) return;
   state.siteData.labels = getLabels().filter((item) => item.id !== label.id);
   state.siteData.cards.forEach((card) => {
     if (card.companyLabel === label.id) card.companyLabel = '';
@@ -1141,27 +1194,29 @@ function bindEvents() {
   });
 
   document.querySelectorAll('[data-card-action]').forEach((button) => {
-    button.addEventListener('click', async (event) => {
+    button.addEventListener('click', (event) => {
       event.preventDefault();
       event.stopPropagation();
-      const card = state.siteData.cards.find((item) => item.slug === button.dataset.cardSlug);
-      if (!card) return;
+      runAction(async () => {
+        const card = state.siteData.cards.find((item) => item.slug === button.dataset.cardSlug);
+        if (!card) return;
 
-      if (button.dataset.cardAction === 'copy') {
-        await copyCardLink(card);
-      } else if (button.dataset.cardAction === 'qr') {
-        state.openMenuSlug = '';
-        openQrModal(publicUrl(card), card.qrColor);
-      } else if (button.dataset.cardAction === 'edit') {
-        selectCardBySlug(card.slug, 'builder');
-        state.status = 'Editing selected card.';
-        renderApp();
-      } else if (button.dataset.cardAction === 'clone') {
-        selectCardBySlug(card.slug, state.activeView);
-        await cloneCard(card);
-      } else if (button.dataset.cardAction === 'delete') {
-        await deleteCard(card);
-      }
+        if (button.dataset.cardAction === 'copy') {
+          await copyCardLink(card);
+        } else if (button.dataset.cardAction === 'qr') {
+          state.openMenuSlug = '';
+          openQrModal(publicUrl(card), card.qrColor);
+        } else if (button.dataset.cardAction === 'edit') {
+          selectCardBySlug(card.slug, 'builder');
+          state.status = 'Editing selected card.';
+          renderApp();
+        } else if (button.dataset.cardAction === 'clone') {
+          selectCardBySlug(card.slug, state.activeView);
+          await cloneCard(card);
+        } else if (button.dataset.cardAction === 'delete') {
+          await deleteCard(card);
+        }
+      });
     });
   });
 
@@ -1172,15 +1227,15 @@ function bindEvents() {
     });
   });
 
-  document.querySelector('[data-new-card]')?.addEventListener('click', createCard);
-  document.querySelector('[data-clone-card]')?.addEventListener('click', cloneCard);
-  document.querySelector('[data-delete-card]')?.addEventListener('click', deleteCard);
-  document.querySelector('[data-save-card]')?.addEventListener('click', saveSelectedCard);
+  document.querySelector('[data-new-card]')?.addEventListener('click', () => runAction(createCard));
+  document.querySelector('[data-clone-card]')?.addEventListener('click', () => runAction(cloneCard));
+  document.querySelector('[data-delete-card]')?.addEventListener('click', () => runAction(deleteCard));
+  document.querySelector('[data-save-card]')?.addEventListener('click', () => runAction(saveSelectedCard));
   document.querySelector('[data-import-site]')?.addEventListener('click', () => document.querySelector('[data-import-site-file]')?.click());
-  document.querySelector('[data-export-site]')?.addEventListener('click', exportSiteData);
+  document.querySelector('[data-export-site]')?.addEventListener('click', () => runAction(exportSiteData));
   document.querySelector('[data-new-label]')?.addEventListener('click', createCompanyLabel);
-  document.querySelector('[data-save-labels]')?.addEventListener('click', saveLabels);
-  document.querySelector('[data-delete-label]')?.addEventListener('click', deleteCompanyLabel);
+  document.querySelector('[data-save-labels]')?.addEventListener('click', () => runAction(saveLabels));
+  document.querySelector('[data-delete-label]')?.addEventListener('click', () => runAction(deleteCompanyLabel));
   document.querySelector('[data-logout]')?.addEventListener('click', logout);
   document.querySelector('[data-add-text]')?.addEventListener('click', () => addLayer('text'));
   document.querySelector('[data-add-image]')?.addEventListener('click', () => document.querySelector('[data-image-upload]')?.click());
