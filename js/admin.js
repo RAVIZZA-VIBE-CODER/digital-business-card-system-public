@@ -15,6 +15,7 @@ const state = {
   companyFilter: 'all',
   status: '',
   qrModal: null,
+  keyboardBound: false,
 };
 
 function escapeHtml(value) {
@@ -382,10 +383,19 @@ function renderCanvasPreview(card, selectable = true) {
   const background = bgImage
     ? `background:${escapeHtml(canvas.backgroundColor || '#050505')} url('${escapeHtml(bgImage)}') center/cover no-repeat`
     : `background:${escapeHtml(canvas.backgroundColor || '#050505')}`;
+  const selectedLayer = selectable ? canvas.layers.find((layer) => layer.id === state.selectedLayerId) : null;
+  const selectionMarkup = selectedLayer ? `
+    <div class="builder-selection-box" data-selection-box style="${layerStyle(selectedLayer, canvas)}">
+      ${['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'].map((handle) => `
+        <button type="button" class="builder-layer-handle builder-layer-handle-${handle}" data-resize-handle="${handle}" data-layer-id="${escapeHtml(selectedLayer.id)}" aria-label="Resize layer ${handle}"></button>
+      `).join('')}
+    </div>
+  ` : '';
 
   return `
     <div class="builder-canvas-frame" data-canvas-frame style="aspect-ratio:${canvas.width}/${canvas.height};${background};border:${Number(canvas.borderWidth) || 0}px solid ${escapeHtml(canvas.borderColor || 'transparent')};border-radius:${Number(canvas.borderRadius) || 0}px">
       ${canvas.layers.map((layer) => renderCanvasLayer(layer, canvas, selectable)).join('')}
+      ${selectionMarkup}
     </div>
   `;
 }
@@ -868,6 +878,16 @@ function addLayer(type) {
   renderApp();
 }
 
+function deleteSelectedLayer() {
+  const card = selectedCard();
+  const canvas = card ? ensureCanvas(card) : null;
+  if (!canvas || !state.selectedLayerId) return;
+  canvas.layers = canvas.layers.filter((layer) => layer.id !== state.selectedLayerId);
+  state.selectedLayerId = '';
+  state.status = 'Layer removed. Save the card to publish the change.';
+  renderApp();
+}
+
 function moveLayer(delta) {
   const card = selectedCard();
   const canvas = card ? ensureCanvas(card) : null;
@@ -1109,7 +1129,7 @@ function bindDragHandlers() {
   if (!frame || !card) return;
   const canvas = ensureCanvas(card);
 
-  frame.querySelectorAll('[data-layer-id]').forEach((element) => {
+  frame.querySelectorAll('.builder-layer[data-layer-id]').forEach((element) => {
     element.addEventListener('pointerdown', (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -1144,11 +1164,87 @@ function bindDragHandlers() {
     });
   });
 
+  frame.querySelectorAll('[data-resize-handle][data-layer-id]').forEach((handle) => {
+    handle.addEventListener('pointerdown', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const layer = canvas.layers.find((item) => item.id === handle.dataset.layerId);
+      if (!layer) return;
+
+      state.selectedLayerId = layer.id;
+      const rect = frame.getBoundingClientRect();
+      const startX = event.clientX;
+      const startY = event.clientY;
+      const originalX = Number(layer.x) || 0;
+      const originalY = Number(layer.y) || 0;
+      const originalW = Math.max(12, Number(layer.w) || 120);
+      const originalH = Math.max(12, Number(layer.h) || 70);
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const direction = handle.dataset.resizeHandle || '';
+      const layerElement = frame.querySelector(`.builder-layer[data-layer-id="${CSS.escape(layer.id)}"]`);
+      const selectionBox = frame.querySelector('[data-selection-box]');
+
+      handle.setPointerCapture(event.pointerId);
+      const update = (moveEvent) => {
+        const deltaX = (moveEvent.clientX - startX) * scaleX;
+        const deltaY = (moveEvent.clientY - startY) * scaleY;
+        let x = originalX;
+        let y = originalY;
+        let w = originalW;
+        let h = originalH;
+
+        if (direction.includes('e')) w = Math.max(12, Math.min(canvas.width - x, originalW + deltaX));
+        if (direction.includes('s')) h = Math.max(12, Math.min(canvas.height - y, originalH + deltaY));
+        if (direction.includes('w')) {
+          w = Math.max(12, Math.min(originalX + originalW, originalW - deltaX));
+          x = originalX + originalW - w;
+        }
+        if (direction.includes('n')) {
+          h = Math.max(12, Math.min(originalY + originalH, originalH - deltaY));
+          y = originalY + originalH - h;
+        }
+
+        layer.x = Math.round(x);
+        layer.y = Math.round(y);
+        layer.w = Math.round(w);
+        layer.h = Math.round(h);
+        [layerElement, selectionBox].forEach((element) => {
+          if (!element) return;
+          element.style.left = pct(layer.x, canvas.width);
+          element.style.top = pct(layer.y, canvas.height);
+          element.style.width = pct(layer.w, canvas.width);
+          element.style.height = pct(layer.h, canvas.height);
+        });
+      };
+      const up = () => {
+        handle.removeEventListener('pointermove', update);
+        handle.removeEventListener('pointerup', up);
+        renderApp();
+      };
+      handle.addEventListener('pointermove', update);
+      handle.addEventListener('pointerup', up);
+    });
+  });
+
   frame.addEventListener('pointerdown', (event) => {
     if (event.target === frame) {
       state.selectedLayerId = '';
       renderApp();
     }
+  });
+}
+
+function bindKeyboardShortcuts() {
+  if (state.keyboardBound) return;
+  state.keyboardBound = true;
+  document.addEventListener('keydown', (event) => {
+    if (!['Delete', 'Backspace'].includes(event.key)) return;
+    const tagName = event.target?.tagName;
+    if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tagName) || event.target?.isContentEditable) return;
+    if (state.activeView !== 'builder' || !state.selectedLayerId) return;
+    event.preventDefault();
+    deleteSelectedLayer();
   });
 }
 
@@ -1252,14 +1348,7 @@ function bindEvents() {
     if (card) openQrModal(publicUrl(card), card.qrColor);
   });
   document.querySelector('[data-export-card]')?.addEventListener('click', exportCardPng);
-  document.querySelector('[data-delete-layer]')?.addEventListener('click', () => {
-    const card = selectedCard();
-    const canvas = card ? ensureCanvas(card) : null;
-    if (!canvas) return;
-    canvas.layers = canvas.layers.filter((layer) => layer.id !== state.selectedLayerId);
-    state.selectedLayerId = '';
-    renderApp();
-  });
+  document.querySelector('[data-delete-layer]')?.addEventListener('click', deleteSelectedLayer);
   document.querySelector('[data-layer-front]')?.addEventListener('click', () => moveLayer(1));
   document.querySelector('[data-layer-back]')?.addEventListener('click', () => moveLayer(-1));
 
@@ -1318,6 +1407,7 @@ function bindEvents() {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
+  bindKeyboardShortcuts();
   try {
     await loadAdminData();
     renderApp();
