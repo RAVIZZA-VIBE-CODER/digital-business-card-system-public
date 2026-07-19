@@ -301,6 +301,156 @@
   line-height: 1.5;
 }
 
+.site-legal-footer {
+  width: min(1120px, 100%);
+  margin: 18px auto 0;
+  padding: 10px 0 16px;
+  text-align: center;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+}
+
+.site-legal-footer a,
+.privacy-footer a,
+.privacy-back-link,
+.public-privacy-link {
+  color: #14e0e2;
+  text-decoration: none;
+}
+
+.site-legal-footer a:hover,
+.privacy-footer a:hover,
+.privacy-back-link:hover,
+.public-privacy-link:hover {
+  text-decoration: underline;
+}
+
+.public-legal-links {
+  position: fixed;
+  right: 18px;
+  bottom: 14px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+}
+
+.public-tanuki-corner {
+  position: static;
+}
+
+.privacy-page {
+  min-height: 100vh;
+  display: block;
+  padding: 28px 18px;
+  background: #050a0f;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.privacy-shell {
+  width: min(820px, 100%);
+  margin: 0 auto;
+}
+
+.privacy-header {
+  padding: 42px 0 28px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.privacy-eyebrow,
+.privacy-meta {
+  margin: 0;
+  color: #14e0e2;
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.privacy-header h1 {
+  margin: 14px 0 12px;
+  color: #ffffff;
+  font-size: clamp(2.1rem, 7vw, 4.2rem);
+  line-height: 1;
+}
+
+.privacy-lede {
+  max-width: 650px;
+  margin: 0 0 18px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 1rem;
+  line-height: 1.7;
+}
+
+.privacy-callout {
+  margin: 24px 0;
+  padding: 16px 18px;
+  border-left: 3px solid #14e0e2;
+  background: rgba(20, 224, 226, 0.08);
+  color: rgba(255, 255, 255, 0.78);
+  line-height: 1.65;
+}
+
+.privacy-content {
+  padding: 4px 0 30px;
+}
+
+.privacy-content h2 {
+  margin: 30px 0 10px;
+  color: #ffffff;
+  font-size: 1.1rem;
+  letter-spacing: 0.02em;
+}
+
+.privacy-content p,
+.privacy-content li {
+  color: rgba(255, 255, 255, 0.7);
+  line-height: 1.75;
+}
+
+.privacy-content ul {
+  padding-left: 1.2rem;
+}
+
+.privacy-content a {
+  color: #14e0e2;
+}
+
+.privacy-disclaimer {
+  margin-top: 34px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+  font-size: 0.85rem;
+}
+
+.privacy-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px 22px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.48);
+  font-size: 0.75rem;
+}
+
+@media (max-width: 560px) {
+  .privacy-page {
+    padding: 18px 14px 82px;
+  }
+
+  .privacy-header {
+    padding-top: 32px;
+  }
+
+  .public-legal-links {
+    right: 10px;
+    bottom: 9px;
+    gap: 8px;
+    font-size: 0.62rem;
+  }
+}
+
 .backend-confirm-overlay {
   position: fixed;
   inset: 0;
