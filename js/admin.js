@@ -41,6 +41,7 @@ function createLayerId() {
 async function api(path, options = {}) {
   const response = await fetch(path, {
     ...options,
+    cache: 'no-store',
     headers: {
       'Content-Type': 'application/json',
       ...(state.authToken ? { Authorization: `Bearer ${state.authToken}` } : {}),
