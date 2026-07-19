@@ -390,6 +390,10 @@ app.get('/', (_req, res) => {
   res.sendFile(path.join(ROOT_DIR, 'index.html'));
 });
 
-app.listen(PORT, HOST, () => {
-  console.log(`Digital business card system running on http://${HOST}:${PORT}`);
-});
+if (!process.env.VERCEL) {
+  app.listen(PORT, HOST, () => {
+    console.log(`Digital business card system running on http://${HOST}:${PORT}`);
+  });
+}
+
+export default app;
