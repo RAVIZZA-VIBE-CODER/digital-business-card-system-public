@@ -1,14 +1,29 @@
-# Digital Business Card System
+# Public Repository Instructions
 
-This public repository contains the server-backed business card application without private card, contact, or company data.
+This is the reusable public codebase for the Digital Business Card System.
 
-## Setup
+It is designed to be published without private people, card, company, phone, email, or QR destination data. Real operational data belongs in the private repository or in a private deployment data source.
 
-1. Install dependencies with `npm install`.
+## Purpose
+
+The system gives modern workers and teams one protected place to create and organize multiple public digital business cards. It supports people who represent several companies, labels, projects, or roles at the same time.
+
+The protected backend is used to create, edit, clone, delete, filter, and organize cards. The public frontend shows only the individual card requested by a card URL.
+
+This first version covers digital business cards and team/company labels. Later versions can extend the same model toward tickets, events, and other identity or access experiences.
+
+## Local Setup
+
+1. Run `npm install`.
 2. Copy `.env.example` to `.env`.
 3. Set `HUB_ACCESS_CODE` in `.env`.
 4. Run `npm run dev`.
+5. Open `http://localhost:15000/`.
 
-## Data
+## Safety Rules
 
-The public seed file at `data/site-content.json` intentionally contains no cards and no labels. Create cards from the protected backend after deployment, or use a private data source outside this repository.
+- Do not commit `.env`.
+- Do not commit real access codes.
+- Do not commit private card/contact data to this public repository.
+- Keep `data/site-content.json` empty unless the data is safe to publish.
+- Run `npm run lint` and `npm run build` before pushing.
