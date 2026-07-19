@@ -5,6 +5,19 @@
       "includeFiles": "{assets/**,css/**,data/**,js/**,card-shell.html,index.html}"
     }
   },
+  "redirects": [
+    {
+      "source": "/(.*)",
+      "has": [
+        {
+          "type": "host",
+          "value": "thetanukilabs.it"
+        }
+      ],
+      "destination": "https://www.thetanukilabs.it/$1",
+      "permanent": true
+    }
+  ],
   "rewrites": [
     {
       "source": "/(.*)",
