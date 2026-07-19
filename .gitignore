@@ -11,3 +11,4 @@ output/
 cards/
 upload-ready/
 upload-ready-static/
+.vercel
