@@ -11,6 +11,17 @@
       "has": [
         {
           "type": "host",
+          "value": "www.tanukilabs.fun"
+        }
+      ],
+      "destination": "https://tanukilabs.fun/$1",
+      "permanent": false
+    },
+    {
+      "source": "/(.*)",
+      "has": [
+        {
+          "type": "host",
           "value": "thetanukilabs.it"
         }
       ],
