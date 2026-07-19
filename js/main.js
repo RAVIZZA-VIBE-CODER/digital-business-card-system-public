@@ -23,8 +23,9 @@ function escapeHtml(value) {
     .replaceAll("'", '&#39;');
 }
 
-async function loadSiteData() {
-  const response = await fetch('/api/public-site');
+async function loadSiteData(slug = '') {
+  const query = slug ? `?slug=${encodeURIComponent(slug)}` : '';
+  const response = await fetch(`/api/public-site${query}`);
   if (!response.ok) throw new Error('Unable to load site data');
   state.siteData = await response.json();
   return state.siteData;
@@ -516,7 +517,7 @@ async function initHubPage() {
 
 async function initCardPage() {
   const slug = getCardSlugFromPath();
-  await loadSiteData();
+  await loadSiteData(slug);
   const card = getCardBySlug(slug);
   const qrButton = document.getElementById('open-card-qr');
   const saveButton = document.getElementById('save-card-image');

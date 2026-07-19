@@ -3,6 +3,7 @@ import express, { Request, Response, NextFunction } from 'express';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { get as getBlob, put as putBlob } from '@vercel/blob';
 
 type HubContent = Record<string, unknown>;
 type CardRecord = Record<string, unknown> & { id: string; slug: string };
@@ -17,10 +18,11 @@ const PORT = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
 const ROOT_DIR = process.cwd();
 const DATA_FILE = path.join(ROOT_DIR, 'data', 'site-content.json');
+const BLOB_SITE_DATA_PATH = process.env.SITE_DATA_BLOB_PATH || 'site-content.json';
 const ADMIN_ACCESS_CODE = process.env.HUB_ACCESS_CODE || '';
 const activeSessions = new Map<string, { createdAt: number }>();
 
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '20mb' }));
 
 app.use('/assets', express.static(path.join(ROOT_DIR, 'assets')));
 app.use('/css', express.static(path.join(ROOT_DIR, 'css')));
@@ -134,18 +136,87 @@ function uniqueSlug(cards: CardRecord[], requestedSlug: unknown, ignoredId = '')
 }
 
 async function readSiteData(): Promise<SiteData> {
+  if (hasBlobStorage()) {
+    const blob = await getBlob(BLOB_SITE_DATA_PATH, { access: 'private', useCache: false });
+    if (blob?.statusCode === 200) {
+      const raw = await streamToString(blob.stream);
+      return JSON.parse(raw) as SiteData;
+    }
+  }
+
   const raw = await fs.readFile(DATA_FILE, 'utf8');
   return JSON.parse(raw) as SiteData;
 }
 
 async function writeSiteData(data: SiteData) {
-  await fs.writeFile(DATA_FILE, `${JSON.stringify(data, null, 2)}\n`, 'utf8');
+  const body = `${JSON.stringify(data, null, 2)}\n`;
+  if (hasBlobStorage()) {
+    await putBlob(BLOB_SITE_DATA_PATH, body, {
+      access: 'private',
+      allowOverwrite: true,
+      contentType: 'application/json',
+      cacheControlMaxAge: 60,
+    });
+    return;
+  }
+
+  await fs.writeFile(DATA_FILE, body, 'utf8');
 }
 
-function createPublicSitePayload(siteData: SiteData) {
+function hasBlobStorage() {
+  return Boolean(process.env.BLOB_READ_WRITE_TOKEN || (process.env.VERCEL_OIDC_TOKEN && process.env.BLOB_STORE_ID));
+}
+
+async function streamToString(stream: ReadableStream<Uint8Array>) {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let result = '';
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    result += decoder.decode(value, { stream: true });
+  }
+
+  return result + decoder.decode();
+}
+
+function normalizeSiteData(value: unknown): SiteData {
+  const candidate = value as Partial<SiteData> | null;
+  if (!candidate || typeof candidate !== 'object') {
+    throw new Error('Import must be a JSON object');
+  }
+  if (!candidate.hub || typeof candidate.hub !== 'object') {
+    throw new Error('Import must include a hub object');
+  }
+  if (!Array.isArray(candidate.cards)) {
+    throw new Error('Import must include a cards array');
+  }
+
+  return {
+    hub: candidate.hub,
+    labels: Array.isArray(candidate.labels) ? candidate.labels : [],
+    cards: candidate.cards.map((card, index) => {
+      const slug = uniqueSlug(candidate.cards.slice(0, index) as CardRecord[], card.slug || card.title || `card-${index + 1}`);
+      return {
+        ...card,
+        id: String(card.id || createCardId()),
+        slug,
+        liveUrl: card.liveUrl || `/cards/${slug}/`,
+      };
+    }),
+  };
+}
+
+function createPublicSitePayload(siteData: SiteData, requestedSlug = '') {
+  const slug = sanitizeSlug(requestedSlug);
+  const cards = slug
+    ? siteData.cards.filter((card) => card.isVisible && card.slug === slug)
+    : [];
+
   return {
     hub: siteData.hub,
-    cards: siteData.cards.filter((card) => card.isVisible),
+    cards,
   };
 }
 
@@ -190,10 +261,10 @@ app.post('/api/logout', requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
-app.get('/api/public-site', async (_req, res) => {
+app.get('/api/public-site', async (req, res) => {
   try {
     const siteData = await readSiteData();
-    res.json(createPublicSitePayload(siteData));
+    res.json(createPublicSitePayload(siteData, String(req.query.slug || '')));
   } catch {
     res.status(500).json({ error: 'Unable to load site data' });
   }
@@ -205,6 +276,30 @@ app.get('/api/admin-site', requireAdmin, async (_req, res) => {
     res.json(siteData);
   } catch {
     res.status(500).json({ error: 'Unable to load admin data' });
+  }
+});
+
+app.get('/api/export-site', requireAdmin, async (_req, res) => {
+  try {
+    const siteData = await readSiteData();
+    res.setHeader('Content-Disposition', 'attachment; filename="site-content.json"');
+    res.json(siteData);
+  } catch {
+    res.status(500).json({ error: 'Unable to export site data' });
+  }
+});
+
+app.put('/api/import-site', requireAdmin, async (req, res) => {
+  try {
+    const siteData = normalizeSiteData(req.body);
+    await writeSiteData(siteData);
+    res.json({
+      ok: true,
+      cards: siteData.cards.length,
+      labels: siteData.labels?.length || 0,
+    });
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : 'Unable to import site data' });
   }
 });
 

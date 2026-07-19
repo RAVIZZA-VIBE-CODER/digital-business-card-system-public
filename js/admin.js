@@ -739,6 +739,9 @@ function renderApp() {
       <div class="backend-toolbar-actions">
         <button type="button" data-new-card><i data-lucide="plus"></i>New</button>
         <button type="button" data-new-label><i data-lucide="building-2"></i>New Company</button>
+        <button type="button" data-import-site><i data-lucide="upload"></i>Upload Cards</button>
+        <button type="button" data-export-site><i data-lucide="download"></i>Backup</button>
+        <input type="file" data-import-site-file accept="application/json,.json" hidden>
         ${state.activeView === 'builder' ? `
           <button type="button" data-clone-card><i data-lucide="copy"></i>Clone</button>
           <button type="button" data-delete-card class="backend-danger"><i data-lucide="trash-2"></i>Delete</button>
@@ -914,6 +917,48 @@ async function saveLabels() {
     body: JSON.stringify(card),
   })));
   state.status = 'Companies saved.';
+  renderApp();
+}
+
+function downloadJson(data, filename) {
+  const blob = new Blob([`${JSON.stringify(data, null, 2)}\n`], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+async function exportSiteData() {
+  state.status = 'Preparing backup...';
+  renderApp();
+  const data = await api('/api/export-site');
+  downloadJson(data, 'site-content-backup.json');
+  state.status = 'Backup downloaded.';
+  renderApp();
+}
+
+async function importSiteDataFile(file) {
+  const text = await file.text();
+  const importedData = JSON.parse(text);
+  const count = Array.isArray(importedData.cards) ? importedData.cards.length : 0;
+  if (!window.confirm(`Upload ${count} cards and replace the current live dataset?`)) return;
+
+  state.status = 'Uploading cards...';
+  renderApp();
+  const result = await api('/api/import-site', {
+    method: 'PUT',
+    body: JSON.stringify(importedData),
+  });
+  state.selectedSlug = '';
+  state.selectedId = '';
+  state.selectedOriginalSlug = '';
+  state.selectedLayerId = '';
+  state.selectedLabelId = '';
+  await loadAdminData();
+  state.activeView = 'cards';
+  state.status = `Uploaded ${result.cards || 0} cards and ${result.labels || 0} companies.`;
   renderApp();
 }
 
@@ -1131,6 +1176,8 @@ function bindEvents() {
   document.querySelector('[data-clone-card]')?.addEventListener('click', cloneCard);
   document.querySelector('[data-delete-card]')?.addEventListener('click', deleteCard);
   document.querySelector('[data-save-card]')?.addEventListener('click', saveSelectedCard);
+  document.querySelector('[data-import-site]')?.addEventListener('click', () => document.querySelector('[data-import-site-file]')?.click());
+  document.querySelector('[data-export-site]')?.addEventListener('click', exportSiteData);
   document.querySelector('[data-new-label]')?.addEventListener('click', createCompanyLabel);
   document.querySelector('[data-save-labels]')?.addEventListener('click', saveLabels);
   document.querySelector('[data-delete-label]')?.addEventListener('click', deleteCompanyLabel);
@@ -1174,6 +1221,19 @@ function bindEvents() {
       renderApp();
     };
     reader.readAsDataURL(file);
+  });
+
+  document.querySelector('[data-import-site-file]')?.addEventListener('change', async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      await importSiteDataFile(file);
+    } catch (error) {
+      state.status = `Upload failed: ${error.message || 'Invalid JSON file'}`;
+      renderApp();
+    } finally {
+      event.target.value = '';
+    }
   });
 
   const card = selectedCard();
