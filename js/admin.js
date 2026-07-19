@@ -593,7 +593,7 @@ function overviewCardMarkup(card, index) {
           <button type="button" class="is-danger" data-card-action="delete" data-card-slug="${escapeHtml(card.slug)}"><i data-lucide="trash-2"></i>Delete</button>
         </div>
       ` : ''}
-      <div class="hub-item-logo">${escapeHtml(card.domainLabel || `${String(index + 1).padStart(2, '0')} / ${card.slug}`)}</div>
+      <button type="button" class="hub-item-logo backend-overview-qr-trigger" data-card-action="qr" data-card-slug="${escapeHtml(card.slug)}" aria-label="Show QR code for ${escapeHtml(card.title || card.slug)}">${escapeHtml(card.domainLabel || `${String(index + 1).padStart(2, '0')} / ${card.slug}`)}</button>
       ${logoMarkup}
       <div class="hub-item-body">
         <h2 class="hub-item-title">${escapeHtml(card.title || card.slug)}</h2>

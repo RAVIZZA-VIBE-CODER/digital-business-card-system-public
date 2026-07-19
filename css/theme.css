@@ -1224,6 +1224,11 @@ body::before {
   z-index: 2;
   cursor: pointer;
   transition: color 0.25s ease, transform 0.25s ease;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  font: inherit;
+  text-align: left;
 }
 
 .hub-item-logo:hover {
@@ -3323,6 +3328,11 @@ body::before {
 .backend-overview-card {
   min-height: 310px;
   cursor: default;
+}
+
+.backend-overview-qr-trigger {
+  appearance: none;
+  -webkit-appearance: none;
 }
 
 .backend-overview-qr {
