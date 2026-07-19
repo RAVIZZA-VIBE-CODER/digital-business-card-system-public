@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1248 1248" width="4096" height="4096">
+  <g fill="none" stroke="#fafafa" stroke-width="21" stroke-linecap="butt" stroke-linejoin="miter">
+    <circle cx="276" cy="619" r="43" stroke-width="22"/>
+    <line x1="321" y1="619" x2="591" y2="619"/>
+    <polyline points="579,567 634,619 579,671" stroke-width="22"/>
+    <path d="M528 431H475V577 M475 672V780H528"/>
+    <path d="M629 431H682V780H629"/>
+  </g>
+  <g fill="none" stroke="#14e0e2" stroke-width="21" stroke-linecap="butt">
+    <line x1="720" y1="619" x2="815" y2="619"/>
+    <circle cx="864" cy="619" r="43" stroke-width="22"/>
+  </g>
+  <g fill="none" stroke="#99a6b3" stroke-width="15" stroke-linecap="butt">
+    <line x1="930" y1="619" x2="989" y2="619"/>
+    <line x1="1018" y1="619" x2="1076" y2="619"/>
+  </g>
+  <g fill="#99a6b3">
+    <circle cx="990" cy="619" r="16"/>
+    <circle cx="1076" cy="619" r="16"/>
+  </g>
+</svg>

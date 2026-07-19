@@ -1,0 +1,6 @@
+{
+  "name": "Digital Business Card System",
+  "description": "A premium static multi-page digital business card website optimized for mobile, featuring luxury design, interactive controls, and easy manual FTP hosting configuration.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
