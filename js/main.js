@@ -236,7 +236,7 @@ function renderCardMarkup(card) {
         <div class="business-card card-theme-2ndlife-classic" ${backgroundImage}>
           <div class="classic-2ndlife-shell">
             ${card.logoPath ? `<img class="classic-2ndlife-logo" src="${escapeHtml(card.logoPath)}" alt="${escapeHtml(card.title)} logo">` : ''}
-            <div class="classic-2ndlife-name">TOMMASO</div>
+            <div class="classic-2ndlife-name">${escapeHtml(person || card.title)}</div>
             <div class="classic-2ndlife-rows">
               ${legacyContacts.map((contact) => `
                 <a class="classic-2ndlife-row" href="${escapeHtml(contact.url || '#')}" ${contact.url ? 'target="_blank" rel="noopener noreferrer"' : ''}>
