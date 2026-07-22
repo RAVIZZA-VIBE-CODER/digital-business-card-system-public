@@ -220,6 +220,27 @@ function createPublicSitePayload(siteData: SiteData, requestedSlug = '') {
   };
 }
 
+function createPublicCardIndex(siteData: SiteData) {
+  return {
+    cards: siteData.cards
+      .filter((card) => card.isVisible)
+      .map((card) => ({
+        id: card.id,
+        slug: card.slug,
+        title: card.title,
+        personName: card.personName,
+        role: card.role,
+        description: card.description,
+        domainLabel: card.domainLabel,
+        liveUrl: card.liveUrl || `/cards/${card.slug}/`,
+        logoPath: card.logoPath,
+        theme: card.theme,
+        isVisible: card.isVisible,
+        isAvailable: card.isAvailable,
+      })),
+  };
+}
+
 function getSessionToken(req: Request) {
   const header = req.get('authorization');
   if (!header) return '';
@@ -267,6 +288,15 @@ app.get('/api/public-site', async (req, res) => {
     res.json(createPublicSitePayload(siteData, String(req.query.slug || '')));
   } catch {
     res.status(500).json({ error: 'Unable to load site data' });
+  }
+});
+
+app.get('/api/public-cards', async (_req, res) => {
+  try {
+    const siteData = await readSiteData();
+    res.json(createPublicCardIndex(siteData));
+  } catch {
+    res.status(500).json({ error: 'Unable to load public card index' });
   }
 });
 
