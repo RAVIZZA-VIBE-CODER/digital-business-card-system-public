@@ -98,8 +98,8 @@ function bindHubAccessGate() {
   unlockHub();
 }
 
-function getContactIconSvg(label) {
-  const normalized = String(label || '').trim().toLowerCase();
+function getContactIconSvg(label, iconOverride = '') {
+  const normalized = String(iconOverride || label || '').trim().toLowerCase();
 
   if (normalized.includes('email')) {
     return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="m3 7 9 6 9-6"></path></svg>';
@@ -145,7 +145,7 @@ function contactRowMarkup(contact, theme) {
   if (theme === 'tanuki') {
     return `
       <a class="tanuki-row-link" href="${escapeHtml(url || '#')}" ${url ? 'target="_blank" rel="noopener noreferrer"' : ''}>
-        <div class="tanuki-icon-wrap">${getContactIconSvg(label)}</div>
+        <div class="tanuki-icon-wrap">${getContactIconSvg(label, contact?.icon)}</div>
         <div class="tanuki-row-body">${body}</div>
       </a>
     `;
@@ -214,6 +214,17 @@ function renderCanvasCardMarkup(card) {
 }
 
 function renderCardMarkup(card) {
+  if (card.theme === 'html' && (card.htmlTemplate || card.htmlUrl)) {
+    const source = card.htmlTemplate
+      ? `srcdoc="${escapeHtml(card.htmlTemplate)}"`
+      : `src="${escapeHtml(card.htmlUrl)}"`;
+    return `
+      <div class="business-card card-theme-html">
+        <iframe class="html-card-frame" title="${escapeHtml(card.title || 'Uploaded card design')}" ${source} sandbox="allow-scripts allow-forms allow-popups allow-same-origin"></iframe>
+      </div>
+    `;
+  }
+
   if (card.theme === 'canvas' && card.canvas) {
     return renderCanvasCardMarkup(card);
   }
@@ -241,7 +252,7 @@ function renderCardMarkup(card) {
             <div class="classic-2ndlife-rows">
               ${legacyContacts.map((contact) => `
                 <a class="classic-2ndlife-row" href="${escapeHtml(contact.url || '#')}" ${contact.url ? 'target="_blank" rel="noopener noreferrer"' : ''}>
-                  <span class="classic-2ndlife-icon">${getContactIconSvg(contact.label)}</span>
+                  <span class="classic-2ndlife-icon">${getContactIconSvg(contact.label, contact.icon)}</span>
                   <span class="classic-2ndlife-value">${escapeHtml(contact.value || '')}</span>
                 </a>
               `).join('')}
@@ -261,7 +272,7 @@ function renderCardMarkup(card) {
             <div class="classic-trade-rows">
               ${tradeContacts.map((contact) => `
                 <a class="classic-trade-row" href="${escapeHtml(contact.url || '#')}" ${contact.url ? 'target="_blank" rel="noopener noreferrer"' : ''}>
-                  <span class="classic-trade-icon">${getContactIconSvg(contact.label)}</span>
+                  <span class="classic-trade-icon">${getContactIconSvg(contact.label, contact.icon)}</span>
                   <span class="classic-trade-value">${escapeHtml(contact.value || '')}</span>
                 </a>
               `).join('')}
@@ -312,7 +323,7 @@ function renderCardMarkup(card) {
           <div class="area0-contact-list">
             ${areaContacts.map((contact) => `
               <a class="area0-contact-row" href="${escapeHtml(contact.url || '#')}" ${contact.url ? 'target="_blank" rel="noopener noreferrer"' : ''}>
-                <span class="area0-contact-icon">${getContactIconSvg(contact.label)}</span>
+                <span class="area0-contact-icon">${getContactIconSvg(contact.label, contact.icon)}</span>
                 <span class="area0-contact-body">
                   <span class="area0-contact-label">${escapeHtml(contact.label)}</span>
                   <strong class="area0-contact-value">${escapeHtml(contact.value || '')}</strong>
@@ -358,7 +369,7 @@ function renderCardMarkup(card) {
             <div class="thub-contact-list">
               ${contacts.map((contact) => `
                 <a class="thub-contact-row" href="${escapeHtml(contact.url || '#')}" ${contact.url ? 'target="_blank" rel="noopener noreferrer"' : ''}>
-                  <span class="${getContactIconClass('thub', contact.label)}">${getContactIconSvg(contact.label)}</span>
+                  <span class="${getContactIconClass('thub', contact.label)}">${getContactIconSvg(contact.label, contact.icon)}</span>
                   <span class="thub-contact-body">
                     ${contact.label === 'Company'
                       ? `<strong>${escapeHtml(contact.value.split('\n')[0] || '')}</strong><small>${escapeHtml(contact.value.split('\n').slice(1).join('\n'))}</small>`
@@ -386,7 +397,7 @@ function renderCardMarkup(card) {
             <div class="excelsior-contact-list">
               ${contacts.map((contact) => `
                 <a class="excelsior-contact-row" href="${escapeHtml(contact.url || '#')}" ${contact.url ? 'target="_blank" rel="noopener noreferrer"' : ''}>
-                  <span class="excelsior-contact-icon">${getContactIconSvg(contact.label)}</span>
+                  <span class="excelsior-contact-icon">${getContactIconSvg(contact.label, contact.icon)}</span>
                   <span class="excelsior-contact-value">${escapeHtml(contact.value || '')}</span>
                 </a>
               `).join('')}
