@@ -71,6 +71,74 @@ function slugify(value) {
     .slice(0, 80);
 }
 
+function aiReadyDesignPrompt(card) {
+  const documentType = card?.documentType === 'ticket' ? 'ticket' : 'card';
+  const designLabel = documentType === 'ticket' ? 'EVENT TICKET' : 'BUSINESS CARD';
+  const details = {
+    schemaVersion: 1,
+    documentType,
+    title: card?.title || '',
+    slug: card?.slug || '',
+    personName: card?.personName || '',
+    role: card?.role || '',
+    description: card?.description || '',
+    qrColor: card?.qrColor || '#14e0e2',
+    contacts: Array.isArray(card?.contacts) ? card.contacts : [],
+    actions: [
+      ...(card?.primaryActionUrl ? [{
+        label: card.primaryActionLabel || 'Open link',
+        url: card.primaryActionUrl,
+        kind: 'primary',
+      }] : []),
+      ...(card?.secondaryActionUrl ? [{
+        label: card.secondaryActionLabel || 'Open link',
+        url: card.secondaryActionUrl,
+        kind: 'secondary',
+      }] : []),
+    ],
+    ...(documentType === 'ticket' ? { ticket: card?.ticket || createDefaultTicketData(card?.title) } : {}),
+  };
+
+  return `Create a production-ready, interactive ${designLabel} for me.
+
+DELIVERY FORMAT
+- Return one complete, self-contained HTML document in a single code block. I will save it as a .html file and upload it to Tanuki Card Creator.
+- Use only HTML and CSS. Do not use JavaScript, iframes, forms, external scripts, tracking, or analytics.
+- Put all CSS inside one <style> tag. Use HTTPS image URLs or embedded data URLs only.
+- Make the document responsive, mobile-first, and visually complete at 1080 × 1920 portrait. It must also fit smaller phone screens without horizontal scrolling.
+- Keep important content inside a safe area of at least 72px on every side.
+- Use semantic, accessible HTML, strong contrast, legible text, visible focus states, and descriptive alt text.
+
+INTERACTIVE REQUIREMENTS
+- Every phone number must be a real link such as <a href="tel:+390000000000">Call</a>.
+- Every email must use mailto:, every website or booking link must use a full https:// URL, and every physical address may use a Google Maps https:// link.
+- Important buttons must be real <a> elements, not painted text. Add data-card-action="primary" or data-card-action="secondary" to the main buttons.
+- Add data-card-contact="Phone", "Email", "Website", or another useful label to contact links.
+- External web links should use target="_blank" and rel="noopener noreferrer".
+
+REQUIRED MACHINE-READABLE MANIFEST
+Place this exact script structure inside <head>, updating its JSON values to match the final design. Keep it valid JSON. Do not add comments or trailing commas:
+
+<script type="application/json" id="card-studio-manifest">
+${JSON.stringify(details, null, 2)}
+</script>
+
+The contacts array uses this shape:
+{"label":"Phone","value":"+39 000 000 0000","url":"tel:+390000000000"}
+The actions array uses this shape:
+{"label":"Visit website","url":"https://example.com","kind":"primary"}
+
+MY CREATIVE DIRECTION
+- Colors: [INSERT COLORS]
+- Style / mood: [INSERT STYLE]
+- Logo or image URLs: [INSERT URLS OR SAY NONE]
+- Border / texture / special features: [INSERT DETAILS]
+- Typography preference: [INSERT DETAILS]
+- Information or links to add/change: [INSERT DETAILS]
+
+Design the full aesthetic, verify that the manifest matches every visible phone/email/link/button, then return only the final complete HTML code block.`;
+}
+
 function createLayerId() {
   return `layer-${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 8)}`;
 }
@@ -419,6 +487,188 @@ function stringifyContacts(contacts) {
     .join('\n');
 }
 
+function isAllowedImportedUrl(value, { allowFragment = false } = {}) {
+  const url = String(value || '').trim();
+  if (allowFragment && url.startsWith('#')) return true;
+  return /^(https?:|mailto:|tel:)/i.test(url);
+}
+
+function importedLinkValue(anchor, url) {
+  const visibleText = String(anchor.textContent || '').replace(/\s+/g, ' ').trim();
+  if (url.toLowerCase().startsWith('tel:')) return visibleText || decodeURIComponent(url.slice(4));
+  if (url.toLowerCase().startsWith('mailto:')) return visibleText || decodeURIComponent(url.slice(7).split('?')[0]);
+  return visibleText && visibleText !== url ? visibleText : url;
+}
+
+function importedLinkLabel(anchor, url) {
+  const explicit = anchor.getAttribute('data-card-contact');
+  if (explicit) return explicit.trim();
+  if (/^tel:/i.test(url)) return 'Phone';
+  if (/^mailto:/i.test(url)) return 'Email';
+  if (/maps\.google\.|google\.[^/]+\/maps|maps\.apple\./i.test(url)) return 'Address';
+  return 'Website';
+}
+
+function normalizeImportedContact(contact) {
+  if (!contact || typeof contact !== 'object') return null;
+  const url = String(contact.url || '').trim();
+  if (!isAllowedImportedUrl(url)) return null;
+  return {
+    label: String(contact.label || (/^tel:/i.test(url) ? 'Phone' : /^mailto:/i.test(url) ? 'Email' : 'Website')).trim(),
+    value: String(contact.value || url.replace(/^(tel:|mailto:)/i, '')).trim(),
+    url,
+  };
+}
+
+function normalizeImportedAction(action) {
+  if (!action || typeof action !== 'object') return null;
+  const url = String(action.url || '').trim();
+  if (!isAllowedImportedUrl(url)) return null;
+  return {
+    label: String(action.label || 'Open link').trim(),
+    url,
+    kind: action.kind === 'secondary' ? 'secondary' : 'primary',
+  };
+}
+
+function readReadyDesignDocument(source) {
+  const parser = new DOMParser();
+  const documentNode = parser.parseFromString(String(source || ''), 'text/html');
+  if (!documentNode.body || !documentNode.documentElement) throw new Error('The HTML design is not a complete document');
+
+  let manifest = {};
+  const manifestNode = documentNode.querySelector('#card-studio-manifest');
+  if (manifestNode) {
+    try {
+      manifest = JSON.parse(manifestNode.textContent || '{}');
+    } catch {
+      throw new Error('The card-studio manifest contains invalid JSON');
+    }
+  }
+
+  const detectedContacts = [];
+  const detectedActions = [];
+  const seenContacts = new Set();
+  const seenActions = new Set();
+  documentNode.querySelectorAll('a[href]').forEach((anchor) => {
+    const url = String(anchor.getAttribute('href') || '').trim();
+    if (!isAllowedImportedUrl(url, { allowFragment: true })) return;
+    if (/^(tel:|mailto:|https?:)/i.test(url) && !seenContacts.has(url.toLowerCase())) {
+      seenContacts.add(url.toLowerCase());
+      detectedContacts.push({
+        label: importedLinkLabel(anchor, url),
+        value: importedLinkValue(anchor, url),
+        url,
+      });
+    }
+    const actionKind = anchor.getAttribute('data-card-action');
+    if (actionKind && /^https?:/i.test(url) && !seenActions.has(url.toLowerCase())) {
+      seenActions.add(url.toLowerCase());
+      detectedActions.push({
+        label: String(anchor.textContent || 'Open link').replace(/\s+/g, ' ').trim(),
+        url,
+        kind: actionKind === 'secondary' ? 'secondary' : 'primary',
+      });
+    }
+  });
+
+  documentNode.querySelectorAll('script, iframe, object, embed, base, form, meta[http-equiv="refresh" i]').forEach((element) => element.remove());
+  documentNode.querySelectorAll('*').forEach((element) => {
+    [...element.attributes].forEach((attribute) => {
+      const name = attribute.name.toLowerCase();
+      const value = attribute.value.trim();
+      if (name.startsWith('on')
+        || ((name === 'href' || name === 'src' || name === 'action') && /^javascript:/i.test(value))
+        || (name === 'style' && /(javascript:|expression\s*\()/i.test(value))) {
+        element.removeAttribute(attribute.name);
+      }
+    });
+  });
+  documentNode.querySelectorAll('a[href]').forEach((anchor) => {
+    const url = String(anchor.getAttribute('href') || '').trim();
+    if (!isAllowedImportedUrl(url, { allowFragment: true })) {
+      anchor.removeAttribute('href');
+      anchor.removeAttribute('target');
+      return;
+    }
+    if (/^https?:/i.test(url)) {
+      anchor.setAttribute('target', '_blank');
+      anchor.setAttribute('rel', 'noopener noreferrer');
+    } else if (/^(tel:|mailto:)/i.test(url)) {
+      anchor.setAttribute('target', '_top');
+    }
+  });
+
+  const html = `<!doctype html>\n${documentNode.documentElement.outerHTML}`;
+  return { html, manifest, detectedContacts, detectedActions };
+}
+
+async function importReadyDesignFile(file) {
+  if (file.size > 3 * 1024 * 1024) throw new Error('Ready designs must be 3 MB or smaller');
+  const card = selectedCard();
+  if (!card) throw new Error('Select a card or ticket first');
+  const source = await file.text();
+  let htmlSource = source;
+  let packageManifest = {};
+
+  if (file.name.toLowerCase().endsWith('.json') || file.type === 'application/json') {
+    let packageData;
+    try {
+      packageData = JSON.parse(source);
+    } catch {
+      throw new Error('The ready-design JSON file is invalid');
+    }
+    htmlSource = packageData.html || packageData.htmlTemplate || '';
+    packageManifest = packageData.manifest || packageData.card || {};
+    if (!htmlSource) throw new Error('The JSON package must contain an html or htmlTemplate field');
+  }
+
+  const imported = readReadyDesignDocument(htmlSource);
+  const manifest = {
+    ...imported.manifest,
+    ...packageManifest,
+  };
+  const manifestContacts = Array.isArray(manifest.contacts)
+    ? manifest.contacts.map(normalizeImportedContact).filter(Boolean)
+    : [];
+  const manifestActions = Array.isArray(manifest.actions)
+    ? manifest.actions.map(normalizeImportedAction).filter(Boolean)
+    : [];
+  const contacts = manifestContacts.length ? manifestContacts : imported.detectedContacts;
+  const actions = manifestActions.length ? manifestActions : imported.detectedActions;
+  const primaryAction = actions.find((action) => action.kind !== 'secondary') || actions[0];
+  const secondaryAction = actions.find((action) => action.kind === 'secondary') || actions[1];
+  const documentType = manifest.documentType === 'ticket' ? 'ticket' : manifest.documentType === 'card' ? 'card' : card.documentType;
+
+  card.theme = 'html';
+  card.htmlTemplate = imported.html;
+  card.htmlUrl = '';
+  card.documentType = documentType || 'card';
+  if (manifest.title) card.title = String(manifest.title);
+  if (manifest.slug) card.slug = slugify(manifest.slug) || card.slug;
+  if (manifest.personName !== undefined) card.personName = String(manifest.personName || '');
+  if (manifest.role !== undefined) card.role = String(manifest.role || '');
+  if (manifest.description !== undefined) card.description = String(manifest.description || '');
+  if (/^#[0-9a-f]{6}$/i.test(String(manifest.qrColor || ''))) card.qrColor = manifest.qrColor;
+  if (card.documentType === 'ticket' && manifest.ticket && typeof manifest.ticket === 'object') {
+    card.ticket = { ...createDefaultTicketData(card.title), ...manifest.ticket };
+  }
+  if (contacts.length) card.contacts = contacts;
+  if (primaryAction) {
+    card.primaryActionLabel = primaryAction.label;
+    card.primaryActionUrl = primaryAction.url;
+  }
+  if (secondaryAction) {
+    card.secondaryActionLabel = secondaryAction.label;
+    card.secondaryActionUrl = secondaryAction.url;
+  }
+  card.liveUrl = `/${card.documentType === 'ticket' ? 'tickets' : 'cards'}/${card.slug}/`;
+  state.selectedSlug = card.slug;
+  state.selectedLayerId = '';
+  state.status = `Ready design imported. Recognized ${contacts.length} contact link${contacts.length === 1 ? '' : 's'} and ${actions.length} action${actions.length === 1 ? '' : 's'}. Save to publish.`;
+  renderApp();
+}
+
 function pct(value, total) {
   return `${((Number(value) || 0) / total) * 100}%`;
 }
@@ -487,6 +737,18 @@ function renderCanvasLayer(layer, canvas, card, selectable = true) {
 }
 
 function renderCanvasPreview(card, selectable = true) {
+  if (card.theme === 'html' && card.htmlTemplate) {
+    return `
+      <div class="builder-ready-design-frame">
+        <iframe
+          class="builder-html-frame"
+          title="${escapeHtml(card.title || 'Imported ready design')}"
+          srcdoc="${escapeHtml(card.htmlTemplate)}"
+          sandbox="allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation"
+        ></iframe>
+      </div>
+    `;
+  }
   const canvas = ensureCanvas(card);
   const bgImage = canvas.backgroundImage || card.backgroundImage || '';
   const background = bgImage
@@ -926,6 +1188,23 @@ function renderBuilderView(card) {
         ${renderCardInspector(card)}
         ${renderLayerInspector(card)}
       </aside>
+    </section>
+    <section class="backend-ai-handoff">
+      <div class="backend-ai-handoff-copy">
+        <span class="backend-kicker">Create outside · Import here</span>
+        <h2>Make a complete design with ChatGPT</h2>
+        <p>Copy this prompt, customize the creative-direction fields, and ask ChatGPT to return one HTML file. Upload that file here and Creator will recognize its phone, email, website, map, booking, and ticket links.</p>
+        <div class="backend-inline-actions">
+          <button type="button" class="backend-primary" data-copy-ai-prompt><i data-lucide="copy"></i>Copy ChatGPT Prompt</button>
+          <button type="button" data-import-ready-design><i data-lucide="file-up"></i>Import Ready Design</button>
+          <input type="file" data-ready-design-file accept="text/html,application/json,.html,.htm,.json" hidden>
+        </div>
+        <p class="backend-ai-note"><strong>Interactive format:</strong> upload HTML or a JSON package containing HTML. PNG/JPG files can still be added as visual layers, but a flat image cannot carry clickable phone numbers or links.</p>
+      </div>
+      <label class="backend-field backend-ai-prompt-field">
+        <span>Ready-to-copy prompt for this ${card.documentType === 'ticket' ? 'ticket' : 'business card'}</span>
+        <textarea readonly data-ai-design-prompt>${escapeHtml(aiReadyDesignPrompt(card))}</textarea>
+      </label>
     </section>
   `;
 }
@@ -1747,6 +2026,13 @@ function bindEvents() {
   document.querySelector('[data-delete-card]')?.addEventListener('click', () => runAction(deleteCard));
   document.querySelector('[data-save-card]')?.addEventListener('click', () => runAction(saveSelectedCard));
   document.querySelector('[data-import-site]')?.addEventListener('click', () => document.querySelector('[data-import-site-file]')?.click());
+  document.querySelector('[data-copy-ai-prompt]')?.addEventListener('click', () => runAction(async () => {
+    const prompt = document.querySelector('[data-ai-design-prompt]')?.value || aiReadyDesignPrompt(selectedCard());
+    await navigator.clipboard.writeText(prompt);
+    state.status = 'ChatGPT design prompt copied.';
+    renderApp();
+  }));
+  document.querySelector('[data-import-ready-design]')?.addEventListener('click', () => document.querySelector('[data-ready-design-file]')?.click());
   document.querySelector('[data-export-site]')?.addEventListener('click', () => runAction(exportSiteData));
   document.querySelector('[data-new-label]')?.addEventListener('click', createCompanyLabel);
   document.querySelector('[data-save-labels]')?.addEventListener('click', () => runAction(saveLabels));
@@ -1811,6 +2097,19 @@ function bindEvents() {
       await importSiteDataFile(file);
     } catch (error) {
       state.status = `Upload failed: ${error.message || 'Invalid JSON file'}`;
+      renderApp();
+    } finally {
+      event.target.value = '';
+    }
+  });
+
+  document.querySelector('[data-ready-design-file]')?.addEventListener('change', async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      await importReadyDesignFile(file);
+    } catch (error) {
+      state.status = `Ready-design import failed: ${error.message || 'Invalid file'}`;
       renderApp();
     } finally {
       event.target.value = '';

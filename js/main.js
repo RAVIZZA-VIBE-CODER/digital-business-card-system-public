@@ -248,7 +248,7 @@ function renderCardMarkup(card) {
       : `src="${escapeHtml(card.htmlUrl)}"`;
     return `
       <div class="business-card card-theme-html">
-        <iframe class="html-card-frame" title="${escapeHtml(card.title || 'Uploaded card design')}" ${source} sandbox="allow-scripts allow-forms allow-popups allow-same-origin"></iframe>
+        <iframe class="html-card-frame" title="${escapeHtml(card.title || 'Uploaded card design')}" ${source} sandbox="allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation"></iframe>
       </div>
     `;
   }
