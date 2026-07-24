@@ -3678,6 +3678,14 @@ body::before {
   font-size: 1rem;
 }
 
+.backend-overview-help {
+  max-width: 760px;
+  margin: 6px 0 0;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
 .backend-overview-head button {
   min-height: 38px;
   border: 1px solid rgba(20, 224, 226, 0.4);
@@ -3702,6 +3710,137 @@ body::before {
 .backend-overview-card {
   min-height: 310px;
   cursor: default;
+  transition: opacity 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.backend-overview-card.is-dragging {
+  opacity: 0.42;
+  transform: scale(0.985);
+}
+
+.backend-overview-card.is-drop-before {
+  box-shadow: inset 0 5px 0 #14e0e2, 0 24px 54px rgba(0, 0, 0, 0.34);
+}
+
+.backend-overview-card.is-drop-after {
+  box-shadow: inset 0 -5px 0 #14e0e2, 0 24px 54px rgba(0, 0, 0, 0.34);
+}
+
+.backend-card-organizer {
+  position: absolute;
+  top: 22px;
+  left: 50%;
+  z-index: 9;
+  transform: translateX(-50%);
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 999px;
+  background: rgba(6, 9, 14, 0.72);
+  color: #ffffff;
+  backdrop-filter: blur(12px);
+}
+
+.backend-card-drag-handle {
+  width: 31px;
+  height: 31px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.72);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.backend-card-drag-handle:active {
+  cursor: grabbing;
+}
+
+body.is-organizing-cards,
+body.is-organizing-cards * {
+  cursor: grabbing !important;
+  user-select: none !important;
+}
+
+.backend-card-drag-handle:hover {
+  color: #14e0e2;
+  background: rgba(20, 224, 226, 0.12);
+}
+
+.backend-card-drag-handle svg {
+  width: 16px;
+  height: 16px;
+}
+
+.backend-card-organizer label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding-right: 4px;
+}
+
+.backend-card-organizer label span {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 0.56rem;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+}
+
+.backend-card-organizer input {
+  width: 44px;
+  height: 29px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 999px;
+  outline: 0;
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-align: center;
+  appearance: textfield;
+}
+
+.backend-card-organizer input::-webkit-outer-spin-button,
+.backend-card-organizer input::-webkit-inner-spin-button {
+  margin: 0;
+  appearance: none;
+}
+
+.backend-card-organizer input:focus {
+  box-shadow: 0 0 0 2px rgba(20, 224, 226, 0.64);
+}
+
+.backend-card-label-chips {
+  min-height: 20px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 8px 0 2px;
+}
+
+.backend-card-label-chips:empty {
+  display: none;
+}
+
+.backend-card-label-chips span {
+  border: 1px solid color-mix(in srgb, var(--label-color) 52%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--label-color) 13%, transparent);
+  color: #ffffff;
+  padding: 3px 7px;
+  font-size: 0.58rem;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .backend-overview-qr-trigger {
@@ -3761,7 +3900,9 @@ body::before {
   top: 68px;
   right: 24px;
   z-index: 12;
-  width: 172px;
+  width: 228px;
+  max-height: min(430px, calc(100vh - 120px));
+  overflow-y: auto;
   padding: 7px;
   border: 1px solid rgba(255, 255, 255, 0.16);
   background: rgba(7, 10, 15, 0.94);
@@ -3803,6 +3944,102 @@ body::before {
   width: 14px;
   height: 14px;
   flex: 0 0 auto;
+}
+
+.backend-card-menu-labels {
+  display: grid;
+  gap: 3px;
+  margin-top: 6px;
+  padding-top: 9px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.backend-card-menu-labels > span {
+  padding: 2px 8px 5px;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.6rem;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.backend-card-menu-labels > small {
+  padding: 5px 8px 8px;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 0.68rem;
+}
+
+.backend-card-label-option {
+  min-height: 32px;
+  display: grid;
+  grid-template-columns: 16px 9px minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  padding: 5px 8px;
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.backend-card-label-option:hover {
+  background: rgba(20, 224, 226, 0.1);
+}
+
+.backend-card-label-option input {
+  width: 15px;
+  height: 15px;
+  accent-color: #14e0e2;
+}
+
+.backend-card-label-option i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.backend-card-label-option b {
+  overflow: hidden;
+  font-size: 0.7rem;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.backend-card-new-label-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  gap: 5px;
+  margin-top: 5px;
+  padding: 0 5px 4px;
+}
+
+.backend-card-new-label-form input {
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  outline: 0;
+  background: rgba(255, 255, 255, 0.06);
+  color: #ffffff;
+  padding: 0 8px;
+  font-size: 0.68rem;
+}
+
+.backend-card-new-label-form input:focus {
+  border-color: rgba(20, 224, 226, 0.72);
+}
+
+.backend-card-new-label-form input::placeholder {
+  color: rgba(255, 255, 255, 0.38);
+}
+
+.backend-card-menu .backend-card-new-label-form button.backend-card-new-label {
+  width: 34px;
+  min-height: 34px;
+  margin: 0;
+  padding: 0;
+  justify-content: center;
+  border: 1px solid rgba(20, 224, 226, 0.28);
+  color: #14e0e2;
 }
 
 .backend-companies {

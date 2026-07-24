@@ -103,6 +103,7 @@ function createDefaultCard(slug) {
     logoPath: "",
     backgroundImage: "",
     companyLabel: "",
+    labelIds: [],
     liveUrl: `/cards/${cleanSlug}/`,
     qrColor: "#14e0e2",
     primaryActionLabel: "",
@@ -390,10 +391,33 @@ app.put("/api/labels", requireAdmin, async (req, res) => {
   try {
     const siteData = await readSiteData();
     siteData.labels = Array.isArray(req.body?.labels) ? req.body.labels : [];
+    const validLabelIds = new Set(siteData.labels.map((label) => String(label.id || "")).filter(Boolean));
+    siteData.cards = siteData.cards.map((card) => ({
+      ...card,
+      companyLabel: card.companyLabel && validLabelIds.has(String(card.companyLabel)) ? card.companyLabel : "",
+      labelIds: Array.isArray(card.labelIds) ? card.labelIds.map((labelId) => String(labelId)).filter((labelId) => validLabelIds.has(labelId)) : []
+    }));
     await writeSiteData(siteData);
     res.json({ labels: siteData.labels });
   } catch {
     res.status(500).json({ error: "Unable to save labels" });
+  }
+});
+app.put("/api/cards-order", requireAdmin, async (req, res) => {
+  try {
+    const orderedIds = Array.isArray(req.body?.orderedIds) ? req.body.orderedIds.map((value) => String(value)) : [];
+    const siteData = await readSiteData();
+    const cardsById = new Map(siteData.cards.map((card) => [card.id, card]));
+    const uniqueIds = [...new Set(orderedIds)].filter((id) => cardsById.has(id));
+    if (uniqueIds.length !== siteData.cards.length) {
+      res.status(400).json({ error: "Card order must include every card exactly once" });
+      return;
+    }
+    siteData.cards = uniqueIds.map((id) => cardsById.get(id));
+    await writeSiteData(siteData);
+    res.json({ cards: siteData.cards });
+  } catch {
+    res.status(500).json({ error: "Unable to save card order" });
   }
 });
 app.put("/api/cards/:slug", requireAdmin, async (req, res) => {

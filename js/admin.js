@@ -19,6 +19,7 @@ const state = {
   openMenuSlug: '',
   searchQuery: '',
   companyFilter: 'all',
+  draggedCardId: '',
   status: '',
   qrModal: null,
   keyboardBound: false,
@@ -341,11 +342,22 @@ function labelName(labelId) {
   return getLabels().find((label) => label.id === labelId)?.name || '';
 }
 
+function cardLabelIds(card) {
+  const ids = Array.isArray(card?.labelIds) ? card.labelIds.filter(Boolean) : [];
+  if (card?.companyLabel && !ids.includes(card.companyLabel)) ids.push(card.companyLabel);
+  return [...new Set(ids)];
+}
+
+function cardLabels(card) {
+  const ids = cardLabelIds(card);
+  return getLabels().filter((label) => ids.includes(label.id));
+}
+
 function createLabel() {
   return {
     id: `label-${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 8)}`,
-    name: 'New Company',
-    slug: 'new-company',
+    name: 'New Label',
+    slug: 'new-label',
     color: '#14e0e2',
     website: '',
     email: '',
@@ -369,6 +381,7 @@ function cardSearchText(card) {
     card.logoPath,
     card.companyLabel,
     labelName(card.companyLabel),
+    ...cardLabels(card).map((label) => `${label.name || ''} ${label.slug || ''}`),
     contacts,
   ].join(' ').toLowerCase();
 }
@@ -376,7 +389,7 @@ function cardSearchText(card) {
 function filteredCards() {
   const query = state.searchQuery.trim().toLowerCase();
   return (state.siteData?.cards || []).filter((card) => {
-    const matchesCompany = state.companyFilter === 'all' || (card.companyLabel || '') === state.companyFilter;
+    const matchesCompany = state.companyFilter === 'all' || cardLabelIds(card).includes(state.companyFilter);
     const matchesQuery = !query || cardSearchText(card).includes(query);
     return matchesCompany && matchesQuery;
   });
@@ -814,12 +827,12 @@ function renderFilterBar() {
     <section class="backend-filterbar">
       <label class="backend-search">
         <i data-lucide="search"></i>
-        <input type="search" data-filter-search value="${escapeHtml(state.searchQuery)}" placeholder="Search name, company, phone, email, link">
+        <input type="search" data-filter-search value="${escapeHtml(state.searchQuery)}" placeholder="Search name, label, phone, email, link">
       </label>
       <label class="backend-select-filter">
-        <span>Company</span>
-        <select data-filter-company>
-          <option value="all" ${state.companyFilter === 'all' ? 'selected' : ''}>All companies</option>
+        <span>Label</span>
+        <select data-filter-label>
+          <option value="all" ${state.companyFilter === 'all' ? 'selected' : ''}>All labels</option>
           ${getLabels().map((label) => `<option value="${escapeHtml(label.id)}" ${state.companyFilter === label.id ? 'selected' : ''}>${escapeHtml(label.name)}</option>`).join('')}
         </select>
       </label>
@@ -831,7 +844,7 @@ function renderNav() {
   const tabs = [
     ['builder', 'pen-tool', 'Builder'],
     ['cards', 'layout-grid', 'Cards'],
-    ['companies', 'building-2', 'Companies'],
+    ['companies', 'tags', 'Labels'],
   ];
 
   return `
@@ -1097,6 +1110,7 @@ function themeClass(theme) {
 function overviewCardMarkup(card, index) {
   const href = card.liveUrl || `/cards/${card.slug}/`;
   const company = labelName(card.companyLabel);
+  const labels = cardLabels(card);
   const description = card.documentType === 'ticket'
     ? [card.ticket?.dateLabel, card.ticket?.venue].filter(Boolean).join(' · ')
     : card.personName || card.role || company || card.description || '';
@@ -1106,7 +1120,16 @@ function overviewCardMarkup(card, index) {
   const menuOpen = state.openMenuSlug === card.slug;
 
   return `
-    <article class="hub-item ${themeClass(card.theme)} backend-overview-card" data-select-card="${escapeHtml(card.slug)}">
+    <article class="hub-item ${themeClass(card.theme)} backend-overview-card" data-select-card="${escapeHtml(card.slug)}" data-organize-card-id="${escapeHtml(card.id)}">
+      <div class="backend-card-organizer" aria-label="Card library position">
+        <button type="button" class="backend-card-drag-handle" data-card-drag-handle="${escapeHtml(card.id)}" title="Drag to reorder" aria-label="Drag ${escapeHtml(card.title || card.slug)} to reorder">
+          <i data-lucide="grip-vertical"></i>
+        </button>
+        <label>
+          <span>ID</span>
+          <input type="number" min="1" max="${state.siteData.cards.length}" value="${index + 1}" data-card-order-number="${escapeHtml(card.id)}" aria-label="Position for ${escapeHtml(card.title || card.slug)}">
+        </label>
+      </div>
       <button type="button" class="backend-card-settings" data-card-settings="${escapeHtml(card.slug)}" aria-label="Card actions" aria-expanded="${menuOpen ? 'true' : 'false'}">
         <i data-lucide="settings"></i>
       </button>
@@ -1117,12 +1140,29 @@ function overviewCardMarkup(card, index) {
           <button type="button" data-card-action="edit" data-card-slug="${escapeHtml(card.slug)}"><i data-lucide="pen-line"></i>Edit</button>
           <button type="button" data-card-action="clone" data-card-slug="${escapeHtml(card.slug)}"><i data-lucide="copy-plus"></i>Clone</button>
           <button type="button" class="is-danger" data-card-action="delete" data-card-slug="${escapeHtml(card.slug)}"><i data-lucide="trash-2"></i>Delete</button>
+          <div class="backend-card-menu-labels">
+            <span>Labels</span>
+            ${getLabels().map((label) => `
+              <label class="backend-card-label-option">
+                <input type="checkbox" data-card-label-id="${escapeHtml(label.id)}" data-card-label-card="${escapeHtml(card.id)}" ${cardLabelIds(card).includes(label.id) ? 'checked' : ''}>
+                <i style="background:${escapeHtml(label.color || '#14e0e2')}"></i>
+                <b>${escapeHtml(label.name)}</b>
+              </label>
+            `).join('') || '<small>No labels created yet.</small>'}
+            <form class="backend-card-new-label-form" data-new-card-label-form="${escapeHtml(card.id)}">
+              <input type="text" data-new-card-label-name maxlength="60" placeholder="New label name" aria-label="New label name for ${escapeHtml(card.title || card.slug)}" required>
+              <button type="submit" class="backend-card-new-label" aria-label="Create and assign label"><i data-lucide="plus"></i></button>
+            </form>
+          </div>
         </div>
       ` : ''}
       <button type="button" class="hub-item-logo backend-overview-qr-trigger" data-card-action="qr" data-card-slug="${escapeHtml(card.slug)}" aria-label="Show QR code for ${escapeHtml(card.title || card.slug)}">${escapeHtml(card.domainLabel || `${String(index + 1).padStart(2, '0')} / ${card.slug}`)}</button>
       ${logoMarkup}
       <div class="hub-item-body">
         <h2 class="hub-item-title">${escapeHtml(card.title || card.slug)}</h2>
+        <div class="backend-card-label-chips">
+          ${labels.map((label) => `<span style="--label-color:${escapeHtml(label.color || '#14e0e2')}">${escapeHtml(label.name)}</span>`).join('')}
+        </div>
         <p class="hub-item-desc">${escapeHtml(description)}</p>
         <a class="hub-item-link" href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">Open ${card.documentType === 'ticket' ? 'Ticket' : 'Card'}
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14m-7-7 7 7-7 7"/></svg>
@@ -1140,6 +1180,7 @@ function renderCardsView() {
       <div>
         <span class="backend-kicker">Visual Library</span>
         <h2>${cards.length} matching designs</h2>
+        <p class="backend-overview-help">Drag the grip to move a card. Enter another ID number to swap those two positions. Open the settings menu to assign one or more labels.</p>
         ${state.status ? `<p class="backend-status" role="status">${escapeHtml(state.status)}</p>` : ''}
       </div>
       <div class="backend-inline-actions">
@@ -1148,7 +1189,7 @@ function renderCardsView() {
       </div>
     </section>
     <section class="hub-grid backend-overview-grid">
-      ${cards.map(overviewCardMarkup).join('') || '<p class="backend-muted">No cards match the current filters.</p>'}
+      ${cards.map((card) => overviewCardMarkup(card, state.siteData.cards.findIndex((item) => item.id === card.id))).join('') || '<p class="backend-muted">No cards match the current filters.</p>'}
     </section>
   `;
 }
@@ -1220,27 +1261,27 @@ function labelField(label, name, value, type = 'text') {
 
 function renderCompaniesView() {
   const label = selectedLabel();
-  const assignedCount = label ? (state.siteData.cards || []).filter((card) => card.companyLabel === label.id).length : 0;
+  const assignedCount = label ? (state.siteData.cards || []).filter((card) => cardLabelIds(card).includes(label.id)).length : 0;
   return `
     <section class="backend-companies">
       <aside class="backend-sidebar">
         <div class="backend-sidebar-head">
           <span class="backend-kicker">Labels</span>
-          <h2>Companies</h2>
+          <h2>Card labels</h2>
         </div>
         <div class="backend-card-list">
           ${getLabels().map((item) => `
             <button type="button" class="backend-card-row ${item.id === state.selectedLabelId ? 'is-active' : ''}" data-select-label="${escapeHtml(item.id)}">
-              <span><strong>${escapeHtml(item.name)}</strong><small>${(state.siteData.cards || []).filter((card) => card.companyLabel === item.id).length} cards</small></span>
+              <span><strong>${escapeHtml(item.name)}</strong><small>${(state.siteData.cards || []).filter((card) => cardLabelIds(card).includes(item.id)).length} cards</small></span>
               <span class="backend-label-dot" style="background:${escapeHtml(item.color || '#14e0e2')}"></span>
             </button>
-          `).join('') || '<p class="backend-muted">No companies yet.</p>'}
+          `).join('') || '<p class="backend-muted">No labels yet.</p>'}
         </div>
       </aside>
       <section class="backend-panel backend-company-editor">
         <div class="backend-panel-head">
-          <span class="backend-kicker">Company Detail</span>
-          <h2>${escapeHtml(label?.name || 'Create a company')}</h2>
+          <span class="backend-kicker">Label Detail</span>
+          <h2>${escapeHtml(label?.name || 'Create a label')}</h2>
         </div>
         ${label ? `
           <div class="backend-form-grid">
@@ -1255,11 +1296,11 @@ function renderCompaniesView() {
               <textarea data-label-field="notes">${escapeHtml(label.notes || '')}</textarea>
             </label>
           </div>
-          <p class="backend-status">${assignedCount} cards assigned to this company.</p>
+          <p class="backend-status">${assignedCount} cards assigned to this label.</p>
           <div class="backend-inline-actions">
-            <button type="button" data-delete-label class="backend-danger"><i data-lucide="trash-2"></i>Delete Company</button>
+            <button type="button" data-delete-label class="backend-danger"><i data-lucide="trash-2"></i>Delete Label</button>
           </div>
-        ` : '<p class="backend-muted">Create a company label, then assign cards to it from the Builder inspector.</p>'}
+        ` : '<p class="backend-muted">Create a label, then assign it directly from any card preview in the Cards view.</p>'}
       </section>
     </section>
   `;
@@ -1288,7 +1329,7 @@ function renderApp() {
       <div class="backend-toolbar-actions">
         <button type="button" data-new-card><i data-lucide="contact"></i>New Card</button>
         <button type="button" data-new-ticket><i data-lucide="ticket-plus"></i>New Ticket</button>
-        <button type="button" data-new-label><i data-lucide="building-2"></i>New Company</button>
+        <button type="button" data-new-label><i data-lucide="tag"></i>New Label</button>
         <button type="button" data-import-site><i data-lucide="upload"></i>Upload Cards</button>
         <button type="button" data-export-site><i data-lucide="download"></i>Backup</button>
         <input type="file" data-import-site-file accept="application/json,.json" hidden>
@@ -1298,7 +1339,7 @@ function renderApp() {
           <button type="button" data-save-card class="backend-primary"><i data-lucide="save"></i>Save</button>
         ` : ''}
         ${state.activeView === 'companies' ? `
-          <button type="button" data-save-labels class="backend-primary"><i data-lucide="save-all"></i>Save Companies</button>
+          <button type="button" data-save-labels class="backend-primary"><i data-lucide="save-all"></i>Save Labels</button>
         ` : ''}
         <button type="button" data-logout><i data-lucide="log-out"></i>Lock</button>
       </div>
@@ -1646,19 +1687,114 @@ async function deleteCard(targetCard = selectedCard()) {
   renderApp();
 }
 
+async function saveOrganizedCard(card, successMessage) {
+  const saved = await api(`/api/cards/${encodeURIComponent(card.slug)}`, {
+    method: 'PUT',
+    body: JSON.stringify(card),
+  });
+  const index = state.siteData.cards.findIndex((item) => item.id === saved.id);
+  if (index !== -1) state.siteData.cards[index] = saved;
+  if (state.selectedId === saved.id) {
+    state.selectedSlug = saved.slug;
+    state.selectedOriginalSlug = saved.slug;
+  }
+  state.status = successMessage;
+  renderApp();
+}
+
+async function persistCardOrder(previousCards, successMessage) {
+  try {
+    const result = await api('/api/cards-order', {
+      method: 'PUT',
+      body: JSON.stringify({ orderedIds: state.siteData.cards.map((card) => card.id) }),
+    });
+    if (Array.isArray(result.cards)) state.siteData.cards = result.cards;
+    state.status = successMessage;
+    renderApp();
+  } catch (error) {
+    state.siteData.cards = previousCards;
+    throw error;
+  }
+}
+
+async function moveCardRelative(sourceId, targetId, placeAfter = false) {
+  if (!sourceId || !targetId || sourceId === targetId) return;
+  const previousCards = [...state.siteData.cards];
+  const sourceIndex = state.siteData.cards.findIndex((card) => card.id === sourceId);
+  if (sourceIndex === -1) return;
+  const [movedCard] = state.siteData.cards.splice(sourceIndex, 1);
+  const targetIndex = state.siteData.cards.findIndex((card) => card.id === targetId);
+  if (targetIndex === -1) {
+    state.siteData.cards = previousCards;
+    return;
+  }
+  state.siteData.cards.splice(targetIndex + (placeAfter ? 1 : 0), 0, movedCard);
+  state.status = 'Saving card order...';
+  renderApp();
+  const finalPosition = state.siteData.cards.findIndex((card) => card.id === sourceId) + 1;
+  await persistCardOrder(previousCards, `${movedCard.title || movedCard.slug} moved to ID ${finalPosition}.`);
+}
+
+async function swapCardOrder(cardId, requestedPosition) {
+  const cards = state.siteData.cards;
+  const sourceIndex = cards.findIndex((card) => card.id === cardId);
+  const targetIndex = Number(requestedPosition) - 1;
+  if (sourceIndex === -1 || !Number.isInteger(targetIndex) || targetIndex < 0 || targetIndex >= cards.length) {
+    state.status = `Enter an ID from 1 to ${cards.length}.`;
+    renderApp();
+    return;
+  }
+  if (sourceIndex === targetIndex) {
+    renderApp();
+    return;
+  }
+  const previousCards = [...cards];
+  const sourceCard = cards[sourceIndex];
+  const targetCard = cards[targetIndex];
+  cards[sourceIndex] = targetCard;
+  cards[targetIndex] = sourceCard;
+  state.status = 'Saving card order...';
+  renderApp();
+  await persistCardOrder(previousCards, `Swapped IDs ${sourceIndex + 1} and ${targetIndex + 1}.`);
+}
+
+async function toggleCardLabel(cardId, labelId, checked) {
+  const card = state.siteData.cards.find((item) => item.id === cardId);
+  const label = getLabels().find((item) => item.id === labelId);
+  if (!card || !label) return;
+  const ids = cardLabelIds(card).filter((id) => id !== labelId);
+  if (checked) ids.push(labelId);
+  card.labelIds = ids;
+  await saveOrganizedCard(card, `${checked ? 'Added' : 'Removed'} ${label.name} ${checked ? 'to' : 'from'} ${card.title || card.slug}.`);
+}
+
+async function createAndAssignCardLabel(cardId, requestedName) {
+  const card = state.siteData.cards.find((item) => item.id === cardId);
+  if (!card) return;
+  const name = String(requestedName || '').trim();
+  if (!name) return;
+  const label = createLabel();
+  label.name = name.slice(0, 60);
+  label.slug = slugify(label.name).toLowerCase() || label.id;
+  state.siteData.labels.push(label);
+  const result = await api('/api/labels', {
+    method: 'PUT',
+    body: JSON.stringify({ labels: getLabels() }),
+  });
+  state.siteData.labels = result.labels || getLabels();
+  card.labelIds = [...cardLabelIds(card), label.id];
+  await saveOrganizedCard(card, `Created ${label.name} and assigned it to ${card.title || card.slug}.`);
+}
+
 async function saveLabels() {
-  state.status = 'Saving companies...';
+  state.status = 'Saving labels...';
   renderApp();
   const result = await api('/api/labels', {
     method: 'PUT',
     body: JSON.stringify({ labels: getLabels() }),
   });
   state.siteData.labels = result.labels || [];
-  await Promise.all((state.siteData.cards || []).map((card) => api(`/api/cards/${encodeURIComponent(card.slug)}`, {
-    method: 'PUT',
-    body: JSON.stringify(card),
-  })));
-  state.status = 'Companies saved.';
+  state.status = 'Labels saved.';
   renderApp();
 }
 
@@ -1709,24 +1845,25 @@ function createCompanyLabel() {
   state.siteData.labels.push(label);
   state.selectedLabelId = label.id;
   state.activeView = 'companies';
-  state.status = 'New company created. Add details and save.';
+  state.status = 'New label created. Add details and save.';
   renderApp();
 }
 
 async function deleteCompanyLabel() {
   const label = selectedLabel();
   if (!label || !(await confirmAction({
-    title: 'Delete company label?',
-    message: `Cards will keep working but lose the ${label.name} company label.`,
-    confirmLabel: 'Delete Company',
+    title: 'Delete label?',
+    message: `Cards will keep working but lose the ${label.name} label.`,
+    confirmLabel: 'Delete Label',
     danger: true,
   }))) return;
   state.siteData.labels = getLabels().filter((item) => item.id !== label.id);
   state.siteData.cards.forEach((card) => {
     if (card.companyLabel === label.id) card.companyLabel = '';
+    card.labelIds = cardLabelIds(card).filter((labelId) => labelId !== label.id);
   });
   state.selectedLabelId = state.siteData.labels[0]?.id || '';
-  state.status = 'Company deleted. Save companies and affected cards to persist.';
+  state.status = 'Label deleted. Save labels to persist the change.';
   renderApp();
 }
 
@@ -1963,14 +2100,17 @@ function bindEvents() {
     }
   });
 
-  document.querySelector('[data-filter-company]')?.addEventListener('change', (event) => {
+  document.querySelector('[data-filter-label]')?.addEventListener('change', (event) => {
     state.companyFilter = event.target.value;
     renderApp();
   });
 
   document.querySelectorAll('[data-select-card]').forEach((button) => {
     button.addEventListener('click', (event) => {
-      if (event.target.closest('a') || event.target.closest('[data-card-settings]') || event.target.closest('[data-card-menu]')) return;
+      if (event.target.closest('a')
+        || event.target.closest('[data-card-settings]')
+        || event.target.closest('[data-card-menu]')
+        || event.target.closest('[data-card-organizer]')) return;
       selectCardBySlug(button.dataset.selectCard, state.activeView);
       state.status = '';
       renderApp();
@@ -2011,6 +2151,97 @@ function bindEvents() {
         }
       });
     });
+  });
+
+  document.querySelectorAll('[data-card-order-number]').forEach((input) => {
+    input.addEventListener('click', (event) => event.stopPropagation());
+    input.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      runAction(() => swapCardOrder(input.dataset.cardOrderNumber, Number(input.value)));
+    });
+    input.addEventListener('change', () => runAction(() => swapCardOrder(input.dataset.cardOrderNumber, Number(input.value))));
+  });
+
+  document.querySelectorAll('[data-card-label-id]').forEach((input) => {
+    input.addEventListener('click', (event) => event.stopPropagation());
+    input.addEventListener('change', () => runAction(() => toggleCardLabel(
+      input.dataset.cardLabelCard,
+      input.dataset.cardLabelId,
+      input.checked,
+    )));
+  });
+
+  document.querySelectorAll('[data-new-card-label-form]').forEach((form) => {
+    form.addEventListener('click', (event) => event.stopPropagation());
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const input = form.querySelector('[data-new-card-label-name]');
+      runAction(() => createAndAssignCardLabel(form.dataset.newCardLabelForm, input?.value));
+    });
+  });
+
+  document.querySelectorAll('[data-card-drag-handle]').forEach((handle) => {
+    handle.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    const beginDrag = (event) => {
+      if (event.button !== 0) return;
+      if (state.draggedCardId) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const sourceId = handle.dataset.cardDragHandle || '';
+      const sourceCard = handle.closest('[data-organize-card-id]');
+      let targetCard = null;
+      let placeAfter = false;
+      state.draggedCardId = sourceId;
+      sourceCard?.classList.add('is-dragging');
+      document.body.classList.add('is-organizing-cards');
+
+      const clearTargets = () => {
+        document.querySelectorAll('.is-drop-before, .is-drop-after').forEach((element) => {
+          element.classList.remove('is-drop-before', 'is-drop-after');
+        });
+      };
+      const move = (moveEvent) => {
+        clearTargets();
+        const candidate = document.elementFromPoint(moveEvent.clientX, moveEvent.clientY)?.closest('[data-organize-card-id]');
+        if (!candidate || candidate.dataset.organizeCardId === sourceId) {
+          targetCard = null;
+          return;
+        }
+        targetCard = candidate;
+        const rect = candidate.getBoundingClientRect();
+        placeAfter = moveEvent.clientY >= rect.top + rect.height / 2;
+        candidate.classList.add(placeAfter ? 'is-drop-after' : 'is-drop-before');
+      };
+      const finish = () => {
+        const targetId = targetCard?.dataset.organizeCardId || '';
+        document.removeEventListener('pointermove', move);
+        document.removeEventListener('mousemove', move);
+        document.removeEventListener('pointerup', finish);
+        document.removeEventListener('mouseup', finish);
+        document.removeEventListener('pointercancel', cancel);
+        clearTargets();
+        sourceCard?.classList.remove('is-dragging');
+        document.body.classList.remove('is-organizing-cards');
+        state.draggedCardId = '';
+        if (targetId) runAction(() => moveCardRelative(sourceId, targetId, placeAfter));
+      };
+      const cancel = () => {
+        targetCard = null;
+        finish();
+      };
+      document.addEventListener('pointermove', move);
+      document.addEventListener('mousemove', move);
+      document.addEventListener('pointerup', finish);
+      document.addEventListener('mouseup', finish);
+      document.addEventListener('pointercancel', cancel);
+    };
+    handle.addEventListener('pointerdown', beginDrag);
+    handle.addEventListener('mousedown', beginDrag);
   });
 
   document.querySelectorAll('[data-select-label]').forEach((button) => {
