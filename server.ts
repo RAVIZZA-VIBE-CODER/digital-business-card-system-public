@@ -3,6 +3,7 @@ import express, { Request, Response, NextFunction } from 'express';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { Readable } from 'node:stream';
 import { get as getBlob, put as putBlob } from '@vercel/blob';
 
 type HubContent = Record<string, unknown>;
@@ -20,7 +21,14 @@ const ROOT_DIR = process.cwd();
 const DATA_FILE = path.join(ROOT_DIR, 'data', 'site-content.json');
 const BLOB_SITE_DATA_PATH = process.env.SITE_DATA_BLOB_PATH || 'site-content.json';
 const ADMIN_ACCESS_CODE = process.env.HUB_ACCESS_CODE || '';
-const activeSessions = new Map<string, { createdAt: number }>();
+const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+const ALLOWED_ASSET_TYPES = new Map([
+  ['image/png', 'png'],
+  ['image/jpeg', 'jpg'],
+  ['image/webp', 'webp'],
+  ['image/gif', 'gif'],
+  ['image/svg+xml', 'svg'],
+]);
 
 app.use(express.json({ limit: '20mb' }));
 
@@ -36,6 +44,10 @@ function sanitizeSlug(value: unknown) {
     .replace(/\s+/g, '-')
     .replace(/[^a-zA-Z0-9-_]/g, '')
     .slice(0, 80);
+}
+
+function publicDocumentPath(documentType: unknown, slug: string) {
+  return `/${documentType === 'ticket' ? 'tickets' : 'cards'}/${slug}/`;
 }
 
 function createCardId() {
@@ -99,6 +111,7 @@ function createDefaultCard(slug: string) {
   return {
     id: createCardId(),
     slug: cleanSlug,
+    documentType: 'card',
     theme: 'canvas',
     slotName: 'New Card',
     domainLabel: cleanSlug.toUpperCase(),
@@ -122,6 +135,52 @@ function createDefaultCard(slug: string) {
     isAvailable: false,
     canvas: createDefaultCanvas(),
   };
+}
+
+function createSessionToken() {
+  const payload = Buffer.from(JSON.stringify({
+    issuedAt: Date.now(),
+    nonce: crypto.randomBytes(12).toString('hex'),
+  })).toString('base64url');
+  const signature = crypto.createHmac('sha256', ADMIN_ACCESS_CODE).update(payload).digest('base64url');
+  return `${payload}.${signature}`;
+}
+
+function isValidSessionToken(token: string) {
+  if (!ADMIN_ACCESS_CODE) return false;
+  const [payload, signature] = token.split('.');
+  if (!payload || !signature) return false;
+
+  const expected = crypto.createHmac('sha256', ADMIN_ACCESS_CODE).update(payload).digest();
+  let submitted: Buffer;
+  try {
+    submitted = Buffer.from(signature, 'base64url');
+  } catch {
+    return false;
+  }
+  if (submitted.length !== expected.length || !crypto.timingSafeEqual(submitted, expected)) return false;
+
+  try {
+    const session = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as { issuedAt?: number };
+    return Number.isFinite(session.issuedAt)
+      && Number(session.issuedAt) <= Date.now()
+      && Date.now() - Number(session.issuedAt) < SESSION_TTL_MS;
+  } catch {
+    return false;
+  }
+}
+
+function parseImageDataUrl(value: unknown) {
+  const match = String(value || '').match(/^data:([^;,]+);base64,([a-zA-Z0-9+/=\s]+)$/);
+  if (!match) throw new Error('Upload must be a base64 image');
+  const contentType = match[1].toLowerCase();
+  const extension = ALLOWED_ASSET_TYPES.get(contentType);
+  if (!extension) throw new Error('Supported images are PNG, JPG, WebP, GIF, and SVG');
+  const buffer = Buffer.from(match[2].replace(/\s/g, ''), 'base64');
+  if (!buffer.length || buffer.length > 8 * 1024 * 1024) {
+    throw new Error('Image must be between 1 byte and 8 MB');
+  }
+  return { buffer, contentType, extension };
 }
 
 function uniqueSlug(cards: CardRecord[], requestedSlug: unknown, ignoredId = '') {
@@ -202,7 +261,7 @@ function normalizeSiteData(value: unknown): SiteData {
         ...card,
         id: String(card.id || createCardId()),
         slug,
-        liveUrl: card.liveUrl || `/cards/${slug}/`,
+        liveUrl: card.liveUrl || publicDocumentPath(card.documentType, slug),
       };
     }),
   };
@@ -232,9 +291,10 @@ function createPublicCardIndex(siteData: SiteData) {
         role: card.role,
         description: card.description,
         domainLabel: card.domainLabel,
-        liveUrl: card.liveUrl || `/cards/${card.slug}/`,
+        liveUrl: card.liveUrl || publicDocumentPath(card.documentType, card.slug),
         logoPath: card.logoPath,
         theme: card.theme,
+        documentType: card.documentType || 'card',
         isVisible: card.isVisible,
         isAvailable: card.isAvailable,
       })),
@@ -256,7 +316,7 @@ function requireAdmin(req: Request, res: Response, next: NextFunction) {
   }
 
   const token = getSessionToken(req);
-  if (!token || !activeSessions.has(token)) {
+  if (!token || !isValidSessionToken(token)) {
     res.status(401).json({ error: 'Unauthorized' });
     return;
   }
@@ -271,15 +331,56 @@ app.post('/api/login', (req, res) => {
     return;
   }
 
-  const token = crypto.randomBytes(24).toString('hex');
-  activeSessions.set(token, { createdAt: Date.now() });
+  const token = createSessionToken();
   res.json({ token });
 });
 
-app.post('/api/logout', requireAdmin, (req, res) => {
-  const token = getSessionToken(req);
-  activeSessions.delete(token);
+app.post('/api/logout', requireAdmin, (_req, res) => {
   res.json({ ok: true });
+});
+
+app.post('/api/assets', requireAdmin, async (req, res) => {
+  try {
+    const { buffer, contentType, extension } = parseImageDataUrl(req.body?.dataUrl);
+    if (!hasBlobStorage()) {
+      res.json({ url: req.body.dataUrl, storage: 'inline' });
+      return;
+    }
+
+    const assetName = `${crypto.randomUUID()}.${extension}`;
+    await putBlob(`card-assets/${assetName}`, buffer, {
+      access: 'private',
+      contentType,
+      cacheControlMaxAge: 31536000,
+    });
+    res.status(201).json({
+      url: `/api/assets/${assetName}`,
+      storage: 'blob',
+    });
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : 'Unable to upload image' });
+  }
+});
+
+app.get('/api/assets/:assetName', async (req, res) => {
+  const assetName = String(req.params.assetName || '');
+  if (!/^[a-f0-9-]{36}\.(png|jpg|webp|gif|svg)$/.test(assetName)) {
+    res.status(404).send('Asset not found');
+    return;
+  }
+
+  try {
+    const result = await getBlob(`card-assets/${assetName}`, { access: 'private' });
+    if (!result || result.statusCode !== 200) {
+      res.status(404).send('Asset not found');
+      return;
+    }
+    res.setHeader('Content-Type', result.blob.contentType);
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    Readable.fromWeb(result.stream as never).pipe(res);
+  } catch {
+    res.status(404).send('Asset not found');
+  }
 });
 
 app.get('/api/public-site', async (req, res) => {
@@ -376,7 +477,7 @@ app.put('/api/cards/:slug', requireAdmin, async (req, res) => {
       ...req.body,
       slug: nextSlug,
       id: existing.id,
-      liveUrl: req.body?.liveUrl || `/cards/${nextSlug}/`,
+      liveUrl: req.body?.liveUrl || publicDocumentPath(req.body?.documentType || existing.documentType, nextSlug),
     };
 
     await writeSiteData(siteData);
@@ -395,7 +496,7 @@ app.post('/api/cards', requireAdmin, async (req, res) => {
       ...req.body,
       id: createCardId(),
       slug,
-      liveUrl: req.body?.liveUrl || `/cards/${slug}/`,
+      liveUrl: req.body?.liveUrl || publicDocumentPath(req.body?.documentType, slug),
       canvas: req.body?.canvas || createDefaultCanvas(),
     };
 
@@ -494,7 +595,7 @@ app.post('/api/cards/:slug/duplicate', requireAdmin, async (req, res) => {
   }
 });
 
-app.get('/cards/:slug', async (req, res) => {
+app.get(['/cards/:slug', '/tickets/:slug'], async (req, res) => {
   try {
     const siteData = await readSiteData();
     const slug = sanitizeSlug(req.params.slug);

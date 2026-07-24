@@ -1,5 +1,11 @@
 import html2canvas from 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/+esm';
 
+const embeddedSessionToken = new URLSearchParams(window.location.hash.slice(1)).get('session') || '';
+if (embeddedSessionToken) {
+  window.localStorage.setItem('businessCardAdminToken', embeddedSessionToken);
+  window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
+}
+
 const state = {
   siteData: null,
   authToken: window.localStorage.getItem('businessCardAdminToken') || '',
@@ -16,7 +22,37 @@ const state = {
   status: '',
   qrModal: null,
   keyboardBound: false,
+  imageUploadMode: 'image',
 };
+
+const DOCUMENT_PRESETS = {
+  'card-portrait': { label: 'Card · Portrait', width: 1080, height: 1920, documentType: 'card' },
+  'card-landscape': { label: 'Card · Landscape', width: 1920, height: 1080, documentType: 'card' },
+  'ticket-portrait': { label: 'Ticket · Portrait', width: 1080, height: 1920, documentType: 'ticket' },
+  'ticket-landscape': { label: 'Ticket · Landscape', width: 1920, height: 1080, documentType: 'ticket' },
+  square: { label: 'Square · 1080', width: 1080, height: 1080 },
+  story: { label: 'Story · 1080 × 1920', width: 1080, height: 1920 },
+  'print-a6': { label: 'Print · A6', width: 1240, height: 1748 },
+};
+
+const LAYER_BINDINGS = [
+  ['', 'No data binding'],
+  ['title', 'Document title'],
+  ['personName', 'Person name'],
+  ['role', 'Role'],
+  ['ticket.eventName', 'Event name'],
+  ['ticket.dateLabel', 'Event date'],
+  ['ticket.venue', 'Venue'],
+  ['ticket.address', 'Address'],
+  ['ticket.ticketType', 'Ticket type'],
+  ['ticket.attendeeName', 'Attendee'],
+  ['ticket.seat', 'Seat'],
+  ['ticket.gate', 'Gate'],
+  ['ticket.orderNumber', 'Ticket number'],
+  ['ticket.instructions', 'Instructions'],
+  ['ticket.qrValue', 'QR destination'],
+  ['publicUrl', 'Public document URL'],
+];
 
 function escapeHtml(value) {
   return String(value || '')
@@ -37,6 +73,48 @@ function slugify(value) {
 
 function createLayerId() {
   return `layer-${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 8)}`;
+}
+
+function createDefaultTicketData(title = 'New Event') {
+  return {
+    eventName: title,
+    dateLabel: 'Saturday · 19:30',
+    venue: 'Event venue',
+    address: 'City, Country',
+    ticketType: 'General Admission',
+    attendeeName: 'Guest name',
+    seat: 'Free seating',
+    gate: 'Main entrance',
+    orderNumber: `TKT-${Date.now().toString(36).toUpperCase()}`,
+    instructions: 'Present this ticket at the entrance.',
+    qrValue: '',
+  };
+}
+
+function createTicketCanvas() {
+  return {
+    width: 1080,
+    height: 1920,
+    backgroundColor: '#07090f',
+    borderColor: '#8b5cf6',
+    borderWidth: 4,
+    borderRadius: 46,
+    layers: [
+      { id: createLayerId(), type: 'text', name: 'Event name', binding: 'ticket.eventName', x: 88, y: 150, w: 904, h: 250, color: '#ffffff', fontSize: 92, fontWeight: 800, align: 'left', lineHeight: 0.98, z: 1 },
+      { id: createLayerId(), type: 'text', name: 'Date', binding: 'ticket.dateLabel', x: 92, y: 440, w: 896, h: 86, color: '#c4b5fd', fontSize: 42, fontWeight: 700, align: 'left', z: 2 },
+      { id: createLayerId(), type: 'text', name: 'Venue', binding: 'ticket.venue', x: 92, y: 550, w: 896, h: 78, color: '#ffffff', fontSize: 40, fontWeight: 650, align: 'left', z: 3 },
+      { id: createLayerId(), type: 'text', name: 'Address', binding: 'ticket.address', x: 92, y: 630, w: 896, h: 70, color: '#9ca3af', fontSize: 30, fontWeight: 500, align: 'left', z: 4 },
+      { id: createLayerId(), type: 'shape', name: 'Ticket panel', shape: 'rect', x: 76, y: 810, w: 928, h: 520, fill: '#111827', stroke: '#312e81', strokeWidth: 2, radius: 32, z: 5 },
+      { id: createLayerId(), type: 'text', name: 'Ticket type', binding: 'ticket.ticketType', x: 118, y: 865, w: 560, h: 78, color: '#a78bfa', fontSize: 29, fontWeight: 800, align: 'left', letterSpacing: 2, z: 6 },
+      { id: createLayerId(), type: 'text', name: 'Attendee', binding: 'ticket.attendeeName', x: 118, y: 960, w: 560, h: 104, color: '#ffffff', fontSize: 48, fontWeight: 750, align: 'left', z: 7 },
+      { id: createLayerId(), type: 'text', name: 'Seat', binding: 'ticket.seat', x: 118, y: 1090, w: 300, h: 70, color: '#d1d5db', fontSize: 28, fontWeight: 600, align: 'left', z: 8 },
+      { id: createLayerId(), type: 'text', name: 'Gate', binding: 'ticket.gate', x: 430, y: 1090, w: 250, h: 70, color: '#d1d5db', fontSize: 28, fontWeight: 600, align: 'left', z: 9 },
+      { id: createLayerId(), type: 'qr', name: 'Entry QR', binding: 'ticket.qrValue', x: 720, y: 900, w: 220, h: 220, fill: '#111827', color: '#ffffff', z: 10 },
+      { id: createLayerId(), type: 'line', name: 'Perforation', x: 80, y: 1450, w: 920, h: 4, stroke: '#4b5563', strokeWidth: 4, rotation: 0, dashed: true, z: 11 },
+      { id: createLayerId(), type: 'text', name: 'Ticket number', binding: 'ticket.orderNumber', x: 92, y: 1510, w: 896, h: 60, color: '#9ca3af', fontSize: 25, fontWeight: 600, align: 'center', letterSpacing: 2, z: 12 },
+      { id: createLayerId(), type: 'text', name: 'Instructions', binding: 'ticket.instructions', x: 110, y: 1620, w: 860, h: 130, color: '#d1d5db', fontSize: 28, fontWeight: 500, align: 'center', lineHeight: 1.3, z: 13 },
+    ],
+  };
 }
 
 async function api(path, options = {}) {
@@ -345,6 +423,22 @@ function pct(value, total) {
   return `${((Number(value) || 0) / total) * 100}%`;
 }
 
+function getPathValue(source, path) {
+  return String(path || '').split('.').reduce((value, key) => value?.[key], source);
+}
+
+function resolvedLayerValue(layer, card) {
+  if (!layer.binding) return layer.type === 'qr' ? (layer.value || '') : (layer.text || '');
+  if (layer.binding === 'publicUrl') return publicUrl(card);
+  return getPathValue(card, layer.binding) ?? '';
+}
+
+function qrImageUrl(value, foreground = '#111827', background = '#ffffff') {
+  const color = String(foreground || '#111827').replace('#', '');
+  const bgcolor = String(background || '#ffffff').replace('#', '');
+  return `https://api.qrserver.com/v1/create-qr-code/?size=600x600&data=${encodeURIComponent(value || ' ')}&color=${encodeURIComponent(color)}&bgcolor=${encodeURIComponent(bgcolor)}&qzone=1&margin=0`;
+}
+
 function layerStyle(layer, canvas) {
   return [
     `left:${pct(layer.x, canvas.width)}`,
@@ -352,29 +446,44 @@ function layerStyle(layer, canvas) {
     `width:${pct(layer.w || 120, canvas.width)}`,
     `height:${pct(layer.h || 70, canvas.height)}`,
     `z-index:${Number(layer.z) || 1}`,
+    `opacity:${Math.max(0, Math.min(1, Number(layer.opacity ?? 1)))}`,
+    `transform:rotate(${Number(layer.rotation) || 0}deg)`,
+    'transform-origin:center center',
   ].join(';');
 }
 
-function renderCanvasLayer(layer, canvas, selectable = true) {
+function renderCanvasLayer(layer, canvas, card, selectable = true) {
+  if (layer.hidden) return '';
   const selected = layer.id === state.selectedLayerId ? ' is-selected' : '';
-  const attrs = selectable ? `data-layer-id="${escapeHtml(layer.id)}"` : '';
-  const baseClass = `builder-layer${selected}`;
+  const attrs = [
+    selectable ? `data-layer-id="${escapeHtml(layer.id)}"` : '',
+    layer.binding ? `data-layer-binding="${escapeHtml(layer.binding)}"` : '',
+  ].filter(Boolean).join(' ');
+  const baseClass = `builder-layer${selected}${layer.locked ? ' is-locked' : ''}`;
   const baseStyle = layerStyle(layer, canvas);
 
   if (layer.type === 'image') {
-    return `<img class="${baseClass} builder-layer-image" ${attrs} src="${escapeHtml(layer.src || '')}" alt="" style="${baseStyle};object-fit:${escapeHtml(layer.objectFit || 'cover')}">`;
+    return `<img class="${baseClass} builder-layer-image" ${attrs} src="${escapeHtml(layer.src || '')}" alt="" style="${baseStyle};object-fit:${escapeHtml(layer.objectFit || 'cover')};object-position:${escapeHtml(layer.objectPosition || 'center')};border-radius:${Number(layer.radius) || 0}px;border:${Number(layer.strokeWidth) || 0}px solid ${escapeHtml(layer.stroke || 'transparent')};filter:${layer.shadow ? 'drop-shadow(0 18px 24px rgba(0,0,0,.35))' : 'none'}">`;
+  }
+
+  if (layer.type === 'qr') {
+    const value = resolvedLayerValue(layer, card);
+    return `<img class="${baseClass} builder-layer-image builder-layer-qr" ${attrs} src="${escapeHtml(qrImageUrl(value, layer.color, layer.fill))}" alt="Ticket QR code" style="${baseStyle};object-fit:contain;border-radius:${Number(layer.radius) || 18}px">`;
   }
 
   if (layer.type === 'shape') {
     const radius = layer.shape === 'ellipse' ? '999px' : `${Number(layer.radius) || 0}px`;
-    return `<div class="${baseClass} builder-layer-shape" ${attrs} style="${baseStyle};background:${escapeHtml(layer.fill || 'transparent')};border:${Number(layer.strokeWidth) || 0}px solid ${escapeHtml(layer.stroke || 'transparent')};border-radius:${radius}"></div>`;
+    return `<div class="${baseClass} builder-layer-shape" ${attrs} style="${baseStyle};background:${escapeHtml(layer.fill || 'transparent')};border:${Number(layer.strokeWidth) || 0}px solid ${escapeHtml(layer.stroke || 'transparent')};border-radius:${radius};box-shadow:${layer.shadow ? '0 24px 45px rgba(0,0,0,.3)' : 'none'}"></div>`;
   }
 
   if (layer.type === 'line') {
-    return `<div class="${baseClass} builder-layer-line" ${attrs} style="${baseStyle};height:${Number(layer.strokeWidth) || 3}px;background:${escapeHtml(layer.stroke || layer.fill || '#ffffff')};transform:rotate(${Number(layer.rotation) || 0}deg);transform-origin:left center"></div>`;
+    const lineBackground = layer.dashed
+      ? `repeating-linear-gradient(90deg,${escapeHtml(layer.stroke || '#ffffff')} 0 18px,transparent 18px 34px)`
+      : escapeHtml(layer.stroke || layer.fill || '#ffffff');
+    return `<div class="${baseClass} builder-layer-line" ${attrs} style="${baseStyle};height:${Number(layer.strokeWidth) || 3}px;background:${lineBackground}"></div>`;
   }
 
-  return `<div class="${baseClass} builder-layer-text" ${attrs} style="${baseStyle};color:${escapeHtml(layer.color || '#ffffff')};font-size:calc(${Number(layer.fontSize) || 42} / ${canvas.height} * min(70vh, 680px));font-weight:${Number(layer.fontWeight) || 600};text-align:${escapeHtml(layer.align || 'left')};line-height:${Number(layer.lineHeight) || 1.12}">${escapeHtml(layer.text || '')}</div>`;
+  return `<div class="${baseClass} builder-layer-text" ${attrs} style="${baseStyle};color:${escapeHtml(layer.color || '#ffffff')};font-size:calc(${Number(layer.fontSize) || 42} / ${canvas.height} * min(70vh, 680px));font-family:${escapeHtml(layer.fontFamily || 'Inter, sans-serif')};font-weight:${Number(layer.fontWeight) || 600};text-align:${escapeHtml(layer.align || 'left')};line-height:${Number(layer.lineHeight) || 1.12};letter-spacing:${Number(layer.letterSpacing) || 0}px;text-transform:${escapeHtml(layer.textTransform || 'none')}">${escapeHtml(resolvedLayerValue(layer, card))}</div>`;
 }
 
 function renderCanvasPreview(card, selectable = true) {
@@ -393,8 +502,8 @@ function renderCanvasPreview(card, selectable = true) {
   ` : '';
 
   return `
-    <div class="builder-canvas-frame" data-canvas-frame style="aspect-ratio:${canvas.width}/${canvas.height};${background};border:${Number(canvas.borderWidth) || 0}px solid ${escapeHtml(canvas.borderColor || 'transparent')};border-radius:${Number(canvas.borderRadius) || 0}px">
-      ${canvas.layers.map((layer) => renderCanvasLayer(layer, canvas, selectable)).join('')}
+    <div class="builder-canvas-frame ${canvas.width > canvas.height ? 'is-landscape' : 'is-portrait'}" data-canvas-frame style="aspect-ratio:${canvas.width}/${canvas.height};${background};border:${Number(canvas.borderWidth) || 0}px solid ${escapeHtml(canvas.borderColor || 'transparent')};border-radius:${Number(canvas.borderRadius) || 0}px">
+      ${canvas.layers.map((layer) => renderCanvasLayer(layer, canvas, card, selectable)).join('')}
       ${selectionMarkup}
     </div>
   `;
@@ -406,7 +515,7 @@ function renderCardList() {
     <button type="button" class="backend-card-row ${card.id === state.selectedId ? 'is-active' : ''}" data-select-card="${escapeHtml(card.slug)}">
       <span>
         <strong>${escapeHtml(card.title || card.slug)}</strong>
-        <small>${escapeHtml(card.personName || card.slug)}${labelName(card.companyLabel) ? ` / ${escapeHtml(labelName(card.companyLabel))}` : ''}</small>
+        <small><span class="backend-kind-badge">${card.documentType === 'ticket' ? 'Ticket' : 'Card'}</span> ${escapeHtml(card.personName || card.ticket?.eventName || card.slug)}${labelName(card.companyLabel) ? ` / ${escapeHtml(labelName(card.companyLabel))}` : ''}</small>
       </span>
       <i data-lucide="${card.isVisible ? 'eye' : 'eye-off'}"></i>
     </button>
@@ -476,6 +585,8 @@ function renderNav() {
 
 function renderCardInspector(card) {
   const canvas = ensureCanvas(card);
+  card.documentType = card.documentType || 'card';
+  card.ticket = card.ticket || createDefaultTicketData(card.title);
   return `
     <div class="backend-panel">
       <div class="backend-panel-head">
@@ -483,6 +594,13 @@ function renderCardInspector(card) {
         <h2>${escapeHtml(card.title || card.slug)}</h2>
       </div>
       <div class="backend-form-grid">
+        <label class="backend-field">
+          <span>Document Type</span>
+          <select data-card-field="documentType">
+            <option value="card" ${card.documentType === 'card' ? 'selected' : ''}>Business card</option>
+            <option value="ticket" ${card.documentType === 'ticket' ? 'selected' : ''}>Event ticket</option>
+          </select>
+        </label>
         ${field('Slug', 'slug', card.slug)}
         ${field('Title', 'title', card.title)}
         ${field('Person', 'personName', card.personName)}
@@ -512,14 +630,45 @@ function renderCardInspector(card) {
           <span>Use free canvas on public card</span>
         </label>
       </div>
+      ${card.documentType === 'ticket' ? `
+        <div class="backend-canvas-settings">
+          <span class="backend-kicker">Event & Ticket Data</span>
+          <div class="backend-form-grid">
+            ${field('Event Name', 'ticket.eventName', card.ticket.eventName)}
+            ${field('Date / Time', 'ticket.dateLabel', card.ticket.dateLabel)}
+            ${field('Venue', 'ticket.venue', card.ticket.venue)}
+            ${field('Address', 'ticket.address', card.ticket.address)}
+            ${field('Ticket Type', 'ticket.ticketType', card.ticket.ticketType)}
+            ${field('Attendee', 'ticket.attendeeName', card.ticket.attendeeName)}
+            ${field('Seat', 'ticket.seat', card.ticket.seat)}
+            ${field('Gate', 'ticket.gate', card.ticket.gate)}
+            ${field('Ticket Number', 'ticket.orderNumber', card.ticket.orderNumber)}
+            ${field('QR Destination', 'ticket.qrValue', card.ticket.qrValue)}
+            <label class="backend-field backend-field-wide">
+              <span>Entry Instructions</span>
+              <textarea data-card-field="ticket.instructions">${escapeHtml(card.ticket.instructions || '')}</textarea>
+            </label>
+          </div>
+        </div>
+      ` : ''}
       <div class="backend-canvas-settings">
-        <span class="backend-kicker">Canvas</span>
+        <span class="backend-kicker">Canvas & Format</span>
         <div class="backend-form-grid">
+          <label class="backend-field backend-field-wide">
+            <span>Size Preset</span>
+            <select data-document-preset>
+              <option value="">Custom · ${canvas.width} × ${canvas.height}</option>
+              ${Object.entries(DOCUMENT_PRESETS).map(([key, preset]) => `<option value="${key}">${preset.label} · ${preset.width} × ${preset.height}</option>`).join('')}
+            </select>
+          </label>
+          ${field('Width', 'canvas.width', canvas.width, 'number', 'min="240" max="4096" step="1"')}
+          ${field('Height', 'canvas.height', canvas.height, 'number', 'min="240" max="4096" step="1"')}
           ${field('Background', 'canvas.backgroundColor', canvas.backgroundColor || '#080b10', 'color')}
           ${field('Border', 'canvas.borderColor', canvas.borderColor || '#14e0e2', 'color')}
           ${field('Border Width', 'canvas.borderWidth', canvas.borderWidth || 0, 'number', 'min="0" step="1"')}
           ${field('Radius', 'canvas.borderRadius', canvas.borderRadius || 0, 'number', 'min="0" step="1"')}
           ${field('Background Image', 'canvas.backgroundImage', canvas.backgroundImage || '')}
+          <button type="button" data-upload-background><i data-lucide="image-up"></i>Upload Background</button>
         </div>
       </div>
     </div>
@@ -535,17 +684,24 @@ function renderLayerInspector(card) {
           <span class="backend-kicker">Layer</span>
           <h2>No Layer Selected</h2>
         </div>
-        <p class="backend-muted">Select an item on the canvas, or add text, image, shape, or line layers from the toolbar.</p>
+        <p class="backend-muted">Select an item on the canvas, or add text, images, transparent overlays, QR codes, shapes, or lines from the toolbar.</p>
       </div>
     `;
   }
 
   const common = `
     <div class="backend-form-grid">
+      ${layerField('Layer Name', 'layer.name', layer.name || layer.type)}
       ${layerField('X', 'layer.x', layer.x, 'number', 'step="1"')}
       ${layerField('Y', 'layer.y', layer.y, 'number', 'step="1"')}
       ${layerField('W', 'layer.w', layer.w, 'number', 'step="1" min="1"')}
       ${layerField('H', 'layer.h', layer.h, 'number', 'step="1" min="1"')}
+      ${layerField('Rotation', 'layer.rotation', layer.rotation || 0, 'number', 'min="-360" max="360" step="1"')}
+      ${layerField('Opacity', 'layer.opacity', layer.opacity ?? 1, 'number', 'min="0" max="1" step="0.05"')}
+    </div>
+    <div class="backend-check-row">
+      <label class="backend-check"><input type="checkbox" data-layer-check="locked" ${layer.locked ? 'checked' : ''}><span>Lock layer</span></label>
+      <label class="backend-check"><input type="checkbox" data-layer-check="hidden" ${layer.hidden ? 'checked' : ''}><span>Hide layer</span></label>
     </div>
   `;
   let specific = '';
@@ -556,14 +712,41 @@ function renderLayerInspector(card) {
         <span>Text</span>
         <textarea data-layer-field="text">${escapeHtml(layer.text || '')}</textarea>
       </label>
+      <label class="backend-field backend-field-wide">
+        <span>Dynamic Data</span>
+        <select data-layer-field="binding">
+          ${LAYER_BINDINGS.filter(([value]) => value !== 'ticket.qrValue' && value !== 'publicUrl').map(([value, label]) => `<option value="${escapeHtml(value)}" ${layer.binding === value ? 'selected' : ''}>${escapeHtml(label)}</option>`).join('')}
+        </select>
+      </label>
       <div class="backend-form-grid">
         ${layerField('Color', 'layer.color', layer.color || '#ffffff', 'color')}
         ${layerField('Font Size', 'layer.fontSize', layer.fontSize || 42, 'number', 'min="8" step="1"')}
-        ${layerField('Weight', 'layer.fontWeight', layer.fontWeight || 600, 'number', 'min="100" max="900" step="100"')}
+        ${layerField('Weight', 'layer.fontWeight', layer.fontWeight || 600, 'number', 'min="100" max="900" step="50"')}
+        ${layerField('Line Height', 'layer.lineHeight', layer.lineHeight || 1.12, 'number', 'min="0.6" max="3" step="0.05"')}
+        ${layerField('Letter Spacing', 'layer.letterSpacing', layer.letterSpacing || 0, 'number', 'min="-10" max="40" step="0.5"')}
+        <label class="backend-field">
+          <span>Font</span>
+          <select data-layer-field="fontFamily">
+            ${[
+              ['Inter, sans-serif', 'Inter'],
+              ['Playfair Display, serif', 'Playfair Display'],
+              ['JetBrains Mono, monospace', 'JetBrains Mono'],
+              ['Arial, sans-serif', 'Arial'],
+              ['Georgia, serif', 'Georgia'],
+              ['Impact, sans-serif', 'Impact'],
+            ].map(([value, label]) => `<option value="${value}" ${layer.fontFamily === value ? 'selected' : ''}>${label}</option>`).join('')}
+          </select>
+        </label>
         <label class="backend-field">
           <span>Align</span>
           <select data-layer-field="align">
             ${['left', 'center', 'right'].map((align) => `<option value="${align}" ${layer.align === align ? 'selected' : ''}>${align}</option>`).join('')}
+          </select>
+        </label>
+        <label class="backend-field">
+          <span>Case</span>
+          <select data-layer-field="textTransform">
+            ${[['none', 'Original'], ['uppercase', 'UPPERCASE'], ['lowercase', 'lowercase']].map(([value, label]) => `<option value="${value}" ${layer.textTransform === value ? 'selected' : ''}>${label}</option>`).join('')}
           </select>
         </label>
       </div>
@@ -580,6 +763,31 @@ function renderLayerInspector(card) {
           ${['cover', 'contain', 'fill'].map((fit) => `<option value="${fit}" ${layer.objectFit === fit ? 'selected' : ''}>${fit}</option>`).join('')}
         </select>
       </label>
+      <div class="backend-form-grid">
+        ${layerField('Corner Radius', 'layer.radius', layer.radius || 0, 'number', 'min="0" step="1"')}
+        ${layerField('Border Width', 'layer.strokeWidth', layer.strokeWidth || 0, 'number', 'min="0" step="1"')}
+        ${layerField('Border Color', 'layer.stroke', layer.stroke || '#ffffff', 'color')}
+        <label class="backend-check"><input type="checkbox" data-layer-check="shadow" ${layer.shadow ? 'checked' : ''}><span>Drop shadow</span></label>
+      </div>
+      <button type="button" data-replace-image><i data-lucide="replace"></i>Replace Image</button>
+    `;
+  } else if (layer.type === 'qr') {
+    specific = `
+      <label class="backend-field backend-field-wide">
+        <span>QR Destination</span>
+        <textarea data-layer-field="value">${escapeHtml(layer.value || '')}</textarea>
+      </label>
+      <label class="backend-field backend-field-wide">
+        <span>Dynamic Data</span>
+        <select data-layer-field="binding">
+          ${LAYER_BINDINGS.filter(([value]) => ['', 'ticket.qrValue', 'publicUrl'].includes(value)).map(([value, label]) => `<option value="${escapeHtml(value)}" ${layer.binding === value ? 'selected' : ''}>${escapeHtml(label)}</option>`).join('')}
+        </select>
+      </label>
+      <div class="backend-form-grid">
+        ${layerField('QR Color', 'layer.color', layer.color || '#111827', 'color')}
+        ${layerField('Background', 'layer.fill', layer.fill || '#ffffff', 'color')}
+        ${layerField('Corner Radius', 'layer.radius', layer.radius || 18, 'number', 'min="0" step="1"')}
+      </div>
     `;
   } else {
     specific = `
@@ -587,7 +795,9 @@ function renderLayerInspector(card) {
         ${layerField('Fill', 'layer.fill', layer.fill || '#14e0e2', 'color')}
         ${layerField('Stroke', 'layer.stroke', layer.stroke || '#14e0e2', 'color')}
         ${layerField('Stroke Width', 'layer.strokeWidth', layer.strokeWidth || 0, 'number', 'min="0" step="1"')}
-        ${layerField('Radius/Rotation', layer.type === 'line' ? 'layer.rotation' : 'layer.radius', layer.type === 'line' ? layer.rotation || 0 : layer.radius || 0, 'number', 'step="1"')}
+        ${layer.type === 'shape' ? layerField('Radius', 'layer.radius', layer.radius || 0, 'number', 'min="0" step="1"') : ''}
+        ${layer.type === 'line' ? `<label class="backend-check"><input type="checkbox" data-layer-check="dashed" ${layer.dashed ? 'checked' : ''}><span>Dashed line</span></label>` : ''}
+        ${layer.type === 'shape' ? `<label class="backend-check"><input type="checkbox" data-layer-check="shadow" ${layer.shadow ? 'checked' : ''}><span>Drop shadow</span></label>` : ''}
       </div>
       ${layer.type === 'shape' ? `
         <label class="backend-field">
@@ -610,6 +820,7 @@ function renderLayerInspector(card) {
       ${specific}
       <div class="backend-inline-actions">
         <button type="button" class="backend-danger" data-delete-layer><i data-lucide="trash-2"></i>Delete Layer</button>
+        <button type="button" data-duplicate-layer><i data-lucide="copy-plus"></i>Duplicate</button>
         <button type="button" data-layer-back><i data-lucide="arrow-down"></i>Back</button>
         <button type="button" data-layer-front><i data-lucide="arrow-up"></i>Front</button>
       </div>
@@ -624,7 +835,9 @@ function themeClass(theme) {
 function overviewCardMarkup(card, index) {
   const href = card.liveUrl || `/cards/${card.slug}/`;
   const company = labelName(card.companyLabel);
-  const description = card.personName || card.role || company || card.description || '';
+  const description = card.documentType === 'ticket'
+    ? [card.ticket?.dateLabel, card.ticket?.venue].filter(Boolean).join(' · ')
+    : card.personName || card.role || company || card.description || '';
   const logoMarkup = card.logoPath
     ? `<div class="hub-item-visual"><img src="${escapeHtml(card.logoPath)}" alt="${escapeHtml(card.title)} logo"></div>`
     : '';
@@ -649,7 +862,7 @@ function overviewCardMarkup(card, index) {
       <div class="hub-item-body">
         <h2 class="hub-item-title">${escapeHtml(card.title || card.slug)}</h2>
         <p class="hub-item-desc">${escapeHtml(description)}</p>
-        <a class="hub-item-link" href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">Open Card
+        <a class="hub-item-link" href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">Open ${card.documentType === 'ticket' ? 'Ticket' : 'Card'}
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14m-7-7 7 7-7 7"/></svg>
         </a>
       </div>
@@ -664,10 +877,13 @@ function renderCardsView() {
     <section class="backend-overview-head">
       <div>
         <span class="backend-kicker">Visual Library</span>
-        <h2>${cards.length} matching cards</h2>
+        <h2>${cards.length} matching designs</h2>
         ${state.status ? `<p class="backend-status" role="status">${escapeHtml(state.status)}</p>` : ''}
       </div>
-      <button type="button" data-new-card><i data-lucide="plus"></i>New Card</button>
+      <div class="backend-inline-actions">
+        <button type="button" data-new-card><i data-lucide="contact"></i>New Card</button>
+        <button type="button" data-new-ticket><i data-lucide="ticket-plus"></i>New Ticket</button>
+      </div>
     </section>
     <section class="hub-grid backend-overview-grid">
       ${cards.map(overviewCardMarkup).join('') || '<p class="backend-muted">No cards match the current filters.</p>'}
@@ -690,9 +906,11 @@ function renderBuilderView(card) {
         <div class="backend-stage-toolbar">
           <button type="button" data-add-text><i data-lucide="type"></i>Text</button>
           <button type="button" data-add-image><i data-lucide="image"></i>Image</button>
+          <button type="button" data-add-overlay title="Upload a transparent PNG, WebP, or SVG border"><i data-lucide="frame"></i>Overlay</button>
           <button type="button" data-add-rect><i data-lucide="square"></i>Rect</button>
           <button type="button" data-add-circle><i data-lucide="circle"></i>Circle</button>
           <button type="button" data-add-line><i data-lucide="minus"></i>Line</button>
+          <button type="button" data-add-qr><i data-lucide="qr-code"></i>QR</button>
           <input type="file" data-image-upload accept="image/*" hidden>
           <span class="backend-spacer"></span>
           <button type="button" data-open-public><i data-lucide="external-link"></i>Open</button>
@@ -702,7 +920,7 @@ function renderBuilderView(card) {
         <div class="backend-canvas-wrap">
           ${renderCanvasPreview(card)}
         </div>
-        <p class="backend-status">${escapeHtml(state.status || 'Drag layers freely. Save to publish changes to the public card URL.')}</p>
+        <p class="backend-status">${escapeHtml(state.status || 'Drag and resize any layer. Transparent overlays stay transparent. Save to publish the design.')}</p>
       </section>
       <aside class="backend-inspector">
         ${renderCardInspector(card)}
@@ -784,12 +1002,13 @@ function renderApp() {
   root.innerHTML = `
     <section class="backend-toolbar">
       <div>
-        <span class="backend-kicker">Backend</span>
-        <h2>${cards.length} cards managed</h2>
+        <span class="backend-kicker">Design Studio</span>
+        <h2>${cards.length} cards & tickets managed</h2>
       </div>
       ${renderNav()}
       <div class="backend-toolbar-actions">
-        <button type="button" data-new-card><i data-lucide="plus"></i>New</button>
+        <button type="button" data-new-card><i data-lucide="contact"></i>New Card</button>
+        <button type="button" data-new-ticket><i data-lucide="ticket-plus"></i>New Ticket</button>
         <button type="button" data-new-label><i data-lucide="building-2"></i>New Company</button>
         <button type="button" data-import-site><i data-lucide="upload"></i>Upload Cards</button>
         <button type="button" data-export-site><i data-lucide="download"></i>Backup</button>
@@ -827,6 +1046,20 @@ function updateCardField(card, name, value, input) {
     card.contacts = parseContacts(value);
     return;
   }
+  if (name === 'documentType') {
+    card.documentType = value === 'ticket' ? 'ticket' : 'card';
+    card.ticket = card.ticket || createDefaultTicketData(card.title);
+    card.liveUrl = `/${card.documentType === 'ticket' ? 'tickets' : 'cards'}/${card.slug}/`;
+    renderApp();
+    return;
+  }
+  if (name.startsWith('ticket.')) {
+    const key = name.split('.')[1];
+    card.ticket = card.ticket || createDefaultTicketData(card.title);
+    card.ticket[key] = value;
+    refreshBoundLayers(card, name);
+    return;
+  }
   if (name.startsWith('canvas.')) {
     const key = name.split('.')[1];
     const canvas = ensureCanvas(card);
@@ -835,11 +1068,28 @@ function updateCardField(card, name, value, input) {
     return;
   }
   card[name] = value;
+  refreshBoundLayers(card, name);
   if (name === 'slug') {
     card.slug = slugify(value);
-    card.liveUrl = `/cards/${card.slug}/`;
+    card.liveUrl = `/${card.documentType === 'ticket' ? 'tickets' : 'cards'}/${card.slug}/`;
     state.selectedSlug = card.slug;
   }
+}
+
+function refreshBoundLayers(card, binding) {
+  const canvas = ensureCanvas(card);
+  canvas.layers
+    .filter((layer) => layer.binding === binding)
+    .forEach((layer) => {
+      const element = document.querySelector(`[data-layer-id="${CSS.escape(layer.id)}"]`);
+      if (!element) return;
+      const value = resolvedLayerValue(layer, card);
+      if (layer.type === 'qr') {
+        element.src = qrImageUrl(value, layer.color, layer.fill);
+      } else {
+        element.textContent = value;
+      }
+    });
 }
 
 function updateLayerField(layer, name, value, input) {
@@ -872,9 +1122,127 @@ function addLayer(type) {
     layer = { ...base, type: 'shape', shape: 'ellipse', fill: '#14e0e2', stroke: '#14e0e2', strokeWidth: 0, w: 260, h: 260 };
   } else if (type === 'line') {
     layer = { ...base, type: 'line', stroke: '#ffffff', strokeWidth: 5, h: 5, rotation: 0 };
+  } else if (type === 'qr') {
+    layer = { ...base, type: 'qr', name: 'QR code', value: '', binding: 'publicUrl', color: '#111827', fill: '#ffffff', radius: 18, x: 360, w: 360, h: 360 };
   }
   canvas.layers.push(layer);
   state.selectedLayerId = layer.id;
+  renderApp();
+}
+
+function duplicateSelectedLayer() {
+  const card = selectedCard();
+  const canvas = card ? ensureCanvas(card) : null;
+  const layer = selectedLayer(card);
+  if (!canvas || !layer) return;
+  const copy = JSON.parse(JSON.stringify(layer));
+  copy.id = createLayerId();
+  copy.name = `${layer.name || layer.type} copy`;
+  copy.x = Math.min(canvas.width - Math.max(12, Number(copy.w) || 120), (Number(copy.x) || 0) + 28);
+  copy.y = Math.min(canvas.height - Math.max(12, Number(copy.h) || 70), (Number(copy.y) || 0) + 28);
+  copy.z = canvas.layers.length + 1;
+  copy.locked = false;
+  canvas.layers.push(copy);
+  state.selectedLayerId = copy.id;
+  state.status = 'Layer duplicated. Save to publish.';
+  renderApp();
+}
+
+function applyDocumentPreset(key) {
+  const card = selectedCard();
+  const preset = DOCUMENT_PRESETS[key];
+  if (!card || !preset) return;
+  const canvas = ensureCanvas(card);
+  const oldWidth = canvas.width;
+  const oldHeight = canvas.height;
+  const scaleX = preset.width / oldWidth;
+  const scaleY = preset.height / oldHeight;
+  canvas.layers.forEach((layer) => {
+    layer.x = Math.round((Number(layer.x) || 0) * scaleX);
+    layer.y = Math.round((Number(layer.y) || 0) * scaleY);
+    if (layer.type === 'qr') {
+      const squareSize = Math.max(1, Math.round(Math.max(Number(layer.w) || 1, Number(layer.h) || 1) * Math.sqrt(scaleX * scaleY)));
+      layer.w = squareSize;
+      layer.h = squareSize;
+    } else {
+      layer.w = Math.max(1, Math.round((Number(layer.w) || 1) * scaleX));
+      layer.h = Math.max(1, Math.round((Number(layer.h) || 1) * scaleY));
+    }
+    if (layer.fontSize) layer.fontSize = Math.max(8, Math.round(Number(layer.fontSize) * Math.min(scaleX, scaleY)));
+    if (layer.strokeWidth) layer.strokeWidth = Math.max(1, Math.round(Number(layer.strokeWidth) * Math.min(scaleX, scaleY)));
+  });
+  canvas.width = preset.width;
+  canvas.height = preset.height;
+  if (preset.documentType) {
+    card.documentType = preset.documentType;
+    card.liveUrl = `/${preset.documentType === 'ticket' ? 'tickets' : 'cards'}/${card.slug}/`;
+  }
+  state.status = `Applied ${preset.label} format.`;
+  renderApp();
+}
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('Unable to read the selected image'));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function uploadImageAsset(file) {
+  if (!file.type.startsWith('image/')) throw new Error('Select a PNG, JPG, WebP, GIF, or SVG image');
+  if (file.size > 8 * 1024 * 1024) throw new Error('Images must be 8 MB or smaller');
+  const dataUrl = await fileToDataUrl(file);
+  const result = await api('/api/assets', {
+    method: 'POST',
+    body: JSON.stringify({ dataUrl, filename: file.name }),
+  });
+  return result.url;
+}
+
+async function placeUploadedImage(file, mode = 'image') {
+  const card = selectedCard();
+  if (!card) return;
+  state.status = `Uploading ${file.name}...`;
+  renderApp();
+  const url = await uploadImageAsset(file);
+  const canvas = ensureCanvas(card);
+
+  if (mode === 'background') {
+    canvas.backgroundImage = url;
+    state.status = 'Background uploaded. Save to publish.';
+    renderApp();
+    return;
+  }
+
+  if (mode === 'replace') {
+    const layer = selectedLayer(card);
+    if (layer?.type === 'image') {
+      layer.src = url;
+      state.status = 'Image replaced. Save to publish.';
+      renderApp();
+    }
+    return;
+  }
+
+  addLayer('image');
+  const layer = selectedLayer(card);
+  if (layer) {
+    layer.src = url;
+    layer.name = mode === 'overlay' ? 'Transparent overlay' : file.name.replace(/\.[^.]+$/, '');
+    layer.objectFit = mode === 'overlay' ? 'fill' : 'contain';
+    if (mode === 'overlay') {
+      layer.x = 0;
+      layer.y = 0;
+      layer.w = canvas.width;
+      layer.h = canvas.height;
+      layer.z = canvas.layers.length;
+    }
+  }
+  state.status = mode === 'overlay'
+    ? 'Transparent overlay added above the design.'
+    : 'Image uploaded and added to the canvas.';
   renderApp();
 }
 
@@ -927,7 +1295,7 @@ async function createCard() {
   const title = `New Card ${state.siteData.cards.length + 1}`;
   const created = await api('/api/cards', {
     method: 'POST',
-    body: JSON.stringify({ title, slug: slugify(title), theme: 'canvas' }),
+    body: JSON.stringify({ title, slug: slugify(title), theme: 'canvas', documentType: 'card' }),
   });
   state.siteData.cards.push(created);
   state.selectedSlug = created.slug;
@@ -936,6 +1304,32 @@ async function createCard() {
   state.selectedLayerId = '';
   state.activeView = 'builder';
   state.status = 'New canvas card created.';
+  renderApp();
+}
+
+async function createTicket() {
+  const title = `New Event ${state.siteData.cards.filter((item) => item.documentType === 'ticket').length + 1}`;
+  const slug = slugify(title).toLowerCase();
+  const created = await api('/api/cards', {
+    method: 'POST',
+    body: JSON.stringify({
+      title,
+      slug,
+      documentType: 'ticket',
+      theme: 'canvas',
+      liveUrl: `/tickets/${slug}/`,
+      ticket: createDefaultTicketData(title),
+      canvas: createTicketCanvas(),
+      qrColor: '#8b5cf6',
+    }),
+  });
+  state.siteData.cards.push(created);
+  state.selectedSlug = created.slug;
+  state.selectedId = created.id;
+  state.selectedOriginalSlug = created.slug;
+  state.selectedLayerId = '';
+  state.activeView = 'builder';
+  state.status = 'New event ticket created from the editable ticket template.';
   renderApp();
 }
 
@@ -955,9 +1349,9 @@ async function cloneCard(sourceCard = selectedCard()) {
 async function deleteCard(targetCard = selectedCard()) {
   const card = targetCard;
   if (!card || !(await confirmAction({
-    title: 'Delete business card?',
-    message: `${card.title || card.slug} will be removed from the live card library.`,
-    confirmLabel: 'Delete Card',
+    title: `Delete ${card.documentType === 'ticket' ? 'event ticket' : 'business card'}?`,
+    message: `${card.title || card.slug} will be removed from the live design library.`,
+    confirmLabel: `Delete ${card.documentType === 'ticket' ? 'Ticket' : 'Card'}`,
     danger: true,
   }))) return;
   state.status = 'Deleting card...';
@@ -1136,6 +1530,11 @@ function bindDragHandlers() {
       const layer = canvas.layers.find((item) => item.id === element.dataset.layerId);
       if (!layer) return;
       state.selectedLayerId = layer.id;
+      if (layer.locked) {
+        state.status = 'Layer is locked. Unlock it in the inspector to move or resize it.';
+        renderApp();
+        return;
+      }
       frame.querySelectorAll('.builder-layer').forEach((item) => item.classList.remove('is-selected'));
       element.classList.add('is-selected');
 
@@ -1169,7 +1568,7 @@ function bindDragHandlers() {
       event.preventDefault();
       event.stopPropagation();
       const layer = canvas.layers.find((item) => item.id === handle.dataset.layerId);
-      if (!layer) return;
+      if (!layer || layer.locked) return;
 
       state.selectedLayerId = layer.id;
       const rect = frame.getBoundingClientRect();
@@ -1239,12 +1638,30 @@ function bindKeyboardShortcuts() {
   if (state.keyboardBound) return;
   state.keyboardBound = true;
   document.addEventListener('keydown', (event) => {
-    if (!['Delete', 'Backspace'].includes(event.key)) return;
     const tagName = event.target?.tagName;
     if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tagName) || event.target?.isContentEditable) return;
     if (state.activeView !== 'builder' || !state.selectedLayerId) return;
-    event.preventDefault();
-    deleteSelectedLayer();
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'd') {
+      event.preventDefault();
+      duplicateSelectedLayer();
+      return;
+    }
+    if (['Delete', 'Backspace'].includes(event.key)) {
+      event.preventDefault();
+      deleteSelectedLayer();
+      return;
+    }
+    if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) {
+      const layer = selectedLayer();
+      if (!layer || layer.locked) return;
+      event.preventDefault();
+      const amount = event.shiftKey ? 10 : 1;
+      if (event.key === 'ArrowLeft') layer.x -= amount;
+      if (event.key === 'ArrowRight') layer.x += amount;
+      if (event.key === 'ArrowUp') layer.y -= amount;
+      if (event.key === 'ArrowDown') layer.y += amount;
+      renderApp();
+    }
   });
 }
 
@@ -1325,6 +1742,7 @@ function bindEvents() {
   });
 
   document.querySelector('[data-new-card]')?.addEventListener('click', () => runAction(createCard));
+  document.querySelector('[data-new-ticket]')?.addEventListener('click', () => runAction(createTicket));
   document.querySelector('[data-clone-card]')?.addEventListener('click', () => runAction(cloneCard));
   document.querySelector('[data-delete-card]')?.addEventListener('click', () => runAction(deleteCard));
   document.querySelector('[data-save-card]')?.addEventListener('click', () => runAction(saveSelectedCard));
@@ -1335,10 +1753,26 @@ function bindEvents() {
   document.querySelector('[data-delete-label]')?.addEventListener('click', () => runAction(deleteCompanyLabel));
   document.querySelector('[data-logout]')?.addEventListener('click', logout);
   document.querySelector('[data-add-text]')?.addEventListener('click', () => addLayer('text'));
-  document.querySelector('[data-add-image]')?.addEventListener('click', () => document.querySelector('[data-image-upload]')?.click());
+  document.querySelector('[data-add-image]')?.addEventListener('click', () => {
+    state.imageUploadMode = 'image';
+    document.querySelector('[data-image-upload]')?.click();
+  });
+  document.querySelector('[data-add-overlay]')?.addEventListener('click', () => {
+    state.imageUploadMode = 'overlay';
+    document.querySelector('[data-image-upload]')?.click();
+  });
   document.querySelector('[data-add-rect]')?.addEventListener('click', () => addLayer('shape'));
   document.querySelector('[data-add-circle]')?.addEventListener('click', () => addLayer('circle'));
   document.querySelector('[data-add-line]')?.addEventListener('click', () => addLayer('line'));
+  document.querySelector('[data-add-qr]')?.addEventListener('click', () => addLayer('qr'));
+  document.querySelector('[data-upload-background]')?.addEventListener('click', () => {
+    state.imageUploadMode = 'background';
+    document.querySelector('[data-image-upload]')?.click();
+  });
+  document.querySelector('[data-replace-image]')?.addEventListener('click', () => {
+    state.imageUploadMode = 'replace';
+    document.querySelector('[data-image-upload]')?.click();
+  });
   document.querySelector('[data-open-public]')?.addEventListener('click', () => {
     const card = selectedCard();
     if (card) window.open(publicUrl(card), '_blank', 'noopener,noreferrer');
@@ -1349,23 +1783,25 @@ function bindEvents() {
   });
   document.querySelector('[data-export-card]')?.addEventListener('click', exportCardPng);
   document.querySelector('[data-delete-layer]')?.addEventListener('click', deleteSelectedLayer);
+  document.querySelector('[data-duplicate-layer]')?.addEventListener('click', duplicateSelectedLayer);
   document.querySelector('[data-layer-front]')?.addEventListener('click', () => moveLayer(1));
   document.querySelector('[data-layer-back]')?.addEventListener('click', () => moveLayer(-1));
 
-  document.querySelector('[data-image-upload]')?.addEventListener('change', (event) => {
+  document.querySelector('[data-document-preset]')?.addEventListener('change', (event) => {
+    if (event.target.value) applyDocumentPreset(event.target.value);
+  });
+
+  document.querySelector('[data-image-upload]')?.addEventListener('change', async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      addLayer('image');
-      const layer = selectedLayer();
-      if (layer) {
-        layer.src = String(reader.result || '');
-        layer.objectFit = 'cover';
-      }
-      renderApp();
-    };
-    reader.readAsDataURL(file);
+    try {
+      await placeUploadedImage(file, state.imageUploadMode);
+    } catch (error) {
+      showActionError(error);
+    } finally {
+      event.target.value = '';
+      state.imageUploadMode = 'image';
+    }
   });
 
   document.querySelector('[data-import-site-file]')?.addEventListener('change', async (event) => {
@@ -1383,11 +1819,22 @@ function bindEvents() {
 
   const card = selectedCard();
   document.querySelectorAll('[data-card-field]').forEach((input) => {
-    const eventName = input.tagName === 'TEXTAREA' ? 'input' : 'change';
+    const fieldName = input.dataset.cardField || '';
+    const supportsLivePreview = fieldName.startsWith('ticket.')
+      || ['title', 'personName', 'role', 'description'].includes(fieldName)
+      || input.tagName === 'TEXTAREA';
+    const eventName = supportsLivePreview && input.type !== 'checkbox' ? 'input' : 'change';
     input.addEventListener(eventName, () => updateCardField(card, input.dataset.cardField, input.value, input));
   });
 
   const layer = selectedLayer(card);
+  document.querySelectorAll('[data-layer-check]').forEach((input) => {
+    input.addEventListener('change', () => {
+      if (!layer) return;
+      layer[input.dataset.layerCheck] = input.checked;
+      renderApp();
+    });
+  });
   document.querySelectorAll('[data-layer-field]').forEach((input) => {
     const eventName = input.tagName === 'TEXTAREA' ? 'input' : 'change';
     input.addEventListener(eventName, () => {

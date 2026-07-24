@@ -167,7 +167,24 @@ function pct(value, total) {
   return `${((Number(value) || 0) / total) * 100}%`;
 }
 
-function renderCanvasLayer(layer, canvas) {
+function getPathValue(source, path) {
+  return String(path || '').split('.').reduce((value, key) => value?.[key], source);
+}
+
+function resolvedLayerValue(layer, card) {
+  if (!layer.binding) return layer.type === 'qr' ? (layer.value || '') : (layer.text || '');
+  if (layer.binding === 'publicUrl') return window.location.href;
+  return getPathValue(card, layer.binding) ?? '';
+}
+
+function qrImageUrl(value, foreground = '#111827', background = '#ffffff') {
+  const color = String(foreground || '#111827').replace('#', '');
+  const bgcolor = String(background || '#ffffff').replace('#', '');
+  return `https://api.qrserver.com/v1/create-qr-code/?size=600x600&data=${encodeURIComponent(value || window.location.href)}&color=${encodeURIComponent(color)}&bgcolor=${encodeURIComponent(bgcolor)}&qzone=1&margin=0`;
+}
+
+function renderCanvasLayer(layer, canvas, card) {
+  if (layer.hidden) return '';
   const width = Number(canvas.width) || 1080;
   const height = Number(canvas.height) || 1920;
   const style = [
@@ -176,22 +193,33 @@ function renderCanvasLayer(layer, canvas) {
     `width:${pct(layer.w || 100, width)}`,
     `height:${pct(layer.h || 60, height)}`,
     `z-index:${Number(layer.z) || 1}`,
+    `opacity:${Math.max(0, Math.min(1, Number(layer.opacity ?? 1)))}`,
+    `transform:rotate(${Number(layer.rotation) || 0}deg)`,
+    'transform-origin:center center',
   ];
 
   if (layer.type === 'image') {
-    return `<img class="canvas-card-layer canvas-card-image" src="${escapeHtml(layer.src || '')}" alt="" style="${style.join(';')};object-fit:${escapeHtml(layer.objectFit || 'cover')}">`;
+    return `<img class="canvas-card-layer canvas-card-image" src="${escapeHtml(layer.src || '')}" alt="" style="${style.join(';')};object-fit:${escapeHtml(layer.objectFit || 'cover')};object-position:${escapeHtml(layer.objectPosition || 'center')};border-radius:${Number(layer.radius) || 0}px;border:${Number(layer.strokeWidth) || 0}px solid ${escapeHtml(layer.stroke || 'transparent')};filter:${layer.shadow ? 'drop-shadow(0 18px 24px rgba(0,0,0,.35))' : 'none'}">`;
+  }
+
+  if (layer.type === 'qr') {
+    const value = resolvedLayerValue(layer, card);
+    return `<img class="canvas-card-layer canvas-card-image canvas-card-qr" src="${escapeHtml(qrImageUrl(value, layer.color, layer.fill))}" alt="Ticket QR code" style="${style.join(';')};object-fit:contain;border-radius:${Number(layer.radius) || 18}px">`;
   }
 
   if (layer.type === 'shape') {
     const radius = layer.shape === 'ellipse' ? '999px' : `${Number(layer.radius) || 0}px`;
-    return `<div class="canvas-card-layer canvas-card-shape" style="${style.join(';')};background:${escapeHtml(layer.fill || 'transparent')};border:${Number(layer.strokeWidth) || 0}px solid ${escapeHtml(layer.stroke || 'transparent')};border-radius:${radius}"></div>`;
+    return `<div class="canvas-card-layer canvas-card-shape" style="${style.join(';')};background:${escapeHtml(layer.fill || 'transparent')};border:${Number(layer.strokeWidth) || 0}px solid ${escapeHtml(layer.stroke || 'transparent')};border-radius:${radius};box-shadow:${layer.shadow ? '0 24px 45px rgba(0,0,0,.3)' : 'none'}"></div>`;
   }
 
   if (layer.type === 'line') {
-    return `<div class="canvas-card-layer canvas-card-line" style="${style.join(';')};height:${Number(layer.strokeWidth) || 3}px;background:${escapeHtml(layer.stroke || layer.fill || '#ffffff')};transform:rotate(${Number(layer.rotation) || 0}deg);transform-origin:left center"></div>`;
+    const lineBackground = layer.dashed
+      ? `repeating-linear-gradient(90deg,${escapeHtml(layer.stroke || '#ffffff')} 0 18px,transparent 18px 34px)`
+      : escapeHtml(layer.stroke || layer.fill || '#ffffff');
+    return `<div class="canvas-card-layer canvas-card-line" style="${style.join(';')};height:${Number(layer.strokeWidth) || 3}px;background:${lineBackground}"></div>`;
   }
 
-  return `<div class="canvas-card-layer canvas-card-text" style="${style.join(';')};color:${escapeHtml(layer.color || '#ffffff')};font-size:calc(${Number(layer.fontSize) || 42} / ${height} * min(88vh, 720px));font-weight:${Number(layer.fontWeight) || 600};text-align:${escapeHtml(layer.align || 'left')};line-height:${Number(layer.lineHeight) || 1.12}">${escapeHtml(layer.text || '')}</div>`;
+  return `<div class="canvas-card-layer canvas-card-text" style="${style.join(';')};color:${escapeHtml(layer.color || '#ffffff')};font-size:calc(${Number(layer.fontSize) || 42} / ${height} * min(88vh, 720px));font-family:${escapeHtml(layer.fontFamily || 'Inter, sans-serif')};font-weight:${Number(layer.fontWeight) || 600};text-align:${escapeHtml(layer.align || 'left')};line-height:${Number(layer.lineHeight) || 1.12};letter-spacing:${Number(layer.letterSpacing) || 0}px;text-transform:${escapeHtml(layer.textTransform || 'none')}">${escapeHtml(resolvedLayerValue(layer, card))}</div>`;
 }
 
 function renderCanvasCardMarkup(card) {
@@ -206,8 +234,8 @@ function renderCanvasCardMarkup(card) {
 
   return `
     <div class="business-card card-theme-canvas">
-      <div class="canvas-card" style="aspect-ratio:${width}/${height};${background};border:${Number(canvas.borderWidth) || 0}px solid ${escapeHtml(canvas.borderColor || 'transparent')};border-radius:${Number(canvas.borderRadius) || 0}px">
-        ${layers.map((layer) => renderCanvasLayer(layer, { width, height })).join('')}
+      <div class="canvas-card ${width > height ? 'is-landscape' : 'is-portrait'}" style="aspect-ratio:${width}/${height};${background};border:${Number(canvas.borderWidth) || 0}px solid ${escapeHtml(canvas.borderColor || 'transparent')};border-radius:${Number(canvas.borderRadius) || 0}px">
+        ${layers.map((layer) => renderCanvasLayer(layer, { width, height }, card)).join('')}
       </div>
     </div>
   `;
@@ -424,7 +452,7 @@ function renderCardMarkup(card) {
 }
 
 function setCardMeta(card) {
-  document.title = `${card.title} | Digital Business Card`;
+  document.title = `${card.title} | ${card.documentType === 'ticket' ? 'Event Ticket' : 'Digital Business Card'}`;
   const description = card.description || card.role || card.title;
   const descriptionMeta = document.querySelector('meta[name="description"]');
   if (descriptionMeta) descriptionMeta.setAttribute('content', description);
@@ -513,7 +541,7 @@ function getCardSlugFromPath() {
   }
 
   const parts = window.location.pathname.split('/').filter(Boolean);
-  return parts[0] === 'cards' ? parts[1] : '';
+  return ['cards', 'tickets'].includes(parts[0]) ? parts[1] : '';
 }
 
 function renderCardNotFound() {
